@@ -53,6 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .clang_arg("-Icryptoauthlib/lib")
         .clang_arg(format!("-I{}", out_path.join("build/lib").display()))
         .header("cryptoauthlib/lib/cryptoauthlib.h")
+        .whitelist_function("atCRC")
         .whitelist_function("atgetifacecfg")
         .whitelist_function("atgetifacehaldat")
         .whitelist_function("calib_.*")
