@@ -1,42 +1,35 @@
-use super::calib::command::Packet;
+use super::calib::packet::{Packet, Response};
+use super::datalink::hal::I2c;
+use core::fmt::Debug;
+use embedded_hal::blocking::delay::DelayUs;
+use embedded_hal::blocking::i2c::{Read, Write};
+use heapless::{consts, Vec};
 
-type I2c<T> = Option<T>;
-struct I2cConfig {
-    address: u8, // 0xC0
-    delay: u16,  // Herz,
-    retry: usize,
+pub struct Error;
+
+pub struct CaClient<PHY, D> {
+    i2c: I2c<PHY, D>,
+    buffer: Vec<u8, consts::U192>,
 }
 
-pub struct CryptoAuthClient<T> {
-    i2c: I2c<T>,
-    config: I2cConfig,
+impl<PHY, D> CaClient<PHY, D>
+where
+    PHY: Read + Write,
+    <PHY as Read>::Error: Debug,
+    <PHY as Write>::Error: Debug,
+    D: DelayUs<u32>,
+{
+    pub fn execute(&mut self, packet: Packet) -> Result<Response<'_>, Error> {
+        self.i2c
+            .execute(&mut self.buffer, packet, 10)
+            .map_err(|_| Error)
+    }
 }
 
-/// /// Wakes up device, sends the packet, waits for command completion,
-/// /// receives response, and puts the device into the idle state.
-/// fn execute(&mut self, packet: &mut Packet) -> Result<&[u8], ()> {
-///     let _ = packet.ser(&mut self.buffer)?;
-///     self.i2c.send()?;
-///     self.i2c.receive()?;
-///     self.i2c.idle()?;
-///     Err(())
-/// }
-///
-/// fn sha<'a>(&mut self, bytes: &'a [u8]) -> Result<Sha, Error> {
-///    let packet = Sha::packet(bytes)?;
-///    let buf = self.execute(&packet)?;
-///    Sha::parse(buf)?;
-/// }
-impl<T> CryptoAuthClient<T> {
-    fn new(i2c: I2c<T>) -> Self {
-        Self {
-            i2c,
-            config: I2cConfig {
-                address: 0xC0,
-                delay: 1500,
-                retry: 20,
-            },
-        }
+impl<PHY, D> CaClient<PHY, D> {
+    fn new(i2c: I2c<PHY, D>) -> Self {
+        let buffer = Vec::new();
+        Self { i2c, buffer }
     }
 
     fn config(&mut self) -> Config {
@@ -52,30 +45,32 @@ impl<T> CryptoAuthClient<T> {
     }
 }
 
-struct Config;
+pub struct Config;
 impl Config {
-    fn read_block(&mut self) -> Result<(), ()> {
+    fn read_block(&mut self) -> Result<(), Error> {
         Ok(())
     }
-    fn write_block(&mut self) -> Result<(), ()> {
+    fn write_block(&mut self) -> Result<(), Error> {
         Ok(())
     }
 }
-struct Otp;
+
+pub struct Otp;
 impl Otp {
-    fn read_block(&mut self) -> Result<(), ()> {
+    fn read_block(&mut self) -> Result<(), Error> {
         Ok(())
     }
-    fn write_block(&mut self) -> Result<(), ()> {
+    fn write_block(&mut self) -> Result<(), Error> {
         Ok(())
     }
 }
-struct Data;
+
+pub struct Data;
 impl Data {
-    fn read_block(&mut self) -> Result<(), ()> {
+    fn read_block(&mut self) -> Result<(), Error> {
         Ok(())
     }
-    fn write_block(&mut self) -> Result<(), ()> {
+    fn write_block(&mut self) -> Result<(), Error> {
         Ok(())
     }
 }

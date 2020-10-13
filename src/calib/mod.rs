@@ -1,2 +1,4 @@
 pub mod command;
-mod error;
+mod memory;
+pub mod packet;
+mod parameter;
