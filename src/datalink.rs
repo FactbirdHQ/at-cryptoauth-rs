@@ -1,6 +1,7 @@
 // for this implementation of I2C with CryptoAuth chips, txdata is assumed to
 // have ATCAPacket format Devices such as ATECCx08A require a word address value
 // pre-pended to the packet txdata[0] is using _reserved byte of the ATCAPacket
+use super::error::{Error, ErrorKind};
 use super::packet::{Packet, Response};
 use core::fmt::Debug;
 use core::iter::from_fn;
@@ -17,7 +18,7 @@ const DELAY_US: u32 = 1500;
 /// By default, wake up sequence is repeated up to 20 times until it succeeds.
 const RETRY: usize = 20;
 
-// So-called "word address"
+/// So-called "word address".
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Transaction {
     Reset = 0x00,
@@ -26,8 +27,6 @@ pub enum Transaction {
     Command = 0x03,
     Reserved = 0xff,
 }
-
-pub struct Error;
 
 pub struct I2c<PHY, D> {
     phy: PHY,
@@ -59,14 +58,16 @@ where
         self.delay.delay_us(exec_time);
         let response_buffer = self.receive(buffer)?;
         self.idle()?;
-        Response::new(response_buffer).map_err(|_| Error)
+        Response::new(response_buffer).map_err(|_| ErrorKind::CommFail.into())
     }
 
     pub fn send<T>(&mut self, bytes: &T) -> Result<(), Error>
     where
         T: AsRef<[u8]>,
     {
-        self.phy.write(ADDRESS, bytes.as_ref()).map_err(|_| Error)
+        self.phy
+            .write(ADDRESS, bytes.as_ref())
+            .map_err(|_| ErrorKind::TxFail.into())
     }
 
     /// Returns response buffer for later processing.
@@ -76,27 +77,27 @@ where
         from_fn(|| self.phy.write(ADDRESS, from_ref(&word_address)).into())
             .take(RETRY)
             .find_map(Result::<_, _>::ok)
-            .ok_or_else(|| Error)?;
+            .ok_or_else(|| Error::from(ErrorKind::RxFail))?;
 
         let min_resp_size = 4;
         self.phy
             .read(ADDRESS, &mut buffer[0..2])
-            .map_err(|_| Error)?;
+            .map_err(|_| Error::from(ErrorKind::RxFail))?;
 
         let length_to_read = match buffer[0] {
             // A single byte has already read.
             length if length == 1 => return Ok(buffer[0..1].as_mut()),
             // Buffer cannot contain the response to come. Abort.
-            length if buffer.len() < length as usize => return Err(Error),
+            length if buffer.len() < length as usize => return Err(ErrorKind::CommFail.into()),
             // The coming response is malformed. Abort.
-            length if length < min_resp_size => return Err(Error),
+            length if length < min_resp_size => return Err(ErrorKind::CommFail.into()),
             length => length as usize,
         };
 
         self.phy
             .read(ADDRESS, buffer[2..length_to_read].as_mut())
             .map(move |()| buffer[..length_to_read].as_mut())
-            .map_err(|_| Error)
+            .map_err(|_| ErrorKind::RxFail.into())
     }
 
     pub fn wake(&mut self) -> Result<(), Error> {
@@ -110,12 +111,12 @@ where
         from_fn(|| self.phy.read(ADDRESS, buffer.as_mut()).into())
             .take(RETRY)
             .find_map(Result::<_, _>::ok)
-            .ok_or_else(|| Error)?;
+            .ok_or_else(|| Error::from(ErrorKind::RxFail))?;
 
         match buffer.as_ref() {
             WAKE_RESPONSE_EXPECTED => Ok(()),
-            WAKE_SELFTEST_FAILED => Err(Error),
-            _ => Err(Error),
+            WAKE_SELFTEST_FAILED => Err(ErrorKind::WakeFailed.into()),
+            _ => Err(ErrorKind::WakeFailed.into()),
         }
     }
 
@@ -123,13 +124,13 @@ where
         let word_address = Transaction::Idle as u8;
         self.phy
             .write(ADDRESS, from_ref(&word_address))
-            .map_err(|_| Error)
+            .map_err(|_| ErrorKind::TxFail.into())
     }
 
     pub fn sleep(&mut self) -> Result<(), Error> {
         let word_address = Transaction::Idle as u8;
         self.phy
             .write(ADDRESS, from_ref(&word_address))
-            .map_err(|_| Error)
+            .map_err(|_| ErrorKind::TxFail.into())
     }
 }

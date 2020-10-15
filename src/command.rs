@@ -1,7 +1,47 @@
-use super::packet::{Packet, PacketBuilder};
+use super::packet::{Packet, PacketBuilder, Response};
 use core::convert::TryFrom;
 use signature::Signer;
 pub struct Error;
+
+/// read_serial_number -> Self
+#[derive(Clone, Copy)]
+pub struct Serial {
+    value: [u8; 9],
+}
+
+// Ideally TryFrom
+impl From<&[u8]> for Serial {
+    fn from(buffer: &[u8]) -> Self {
+        let mut value = [0; 9];
+        assert!(buffer.len() >= 9);
+        value.as_mut().copy_from_slice(&buffer[0..4]);
+        value.as_mut().copy_from_slice(&buffer[8..13]);
+        Serial { value }
+    }
+}
+
+impl AsRef<[u8]> for Serial {
+    fn as_ref(&self) -> &[u8] {
+        &self.value
+    }
+}
+
+/// AES
+fn encrypt(/*&self,*/ plain: [u8; 16]) -> Option<[u8; 16]> {
+    None
+}
+fn decrypt(/*&self,*/ cipher: [u8; 16]) -> Option<[u8; 16]> {
+    None
+}
+
+/// A public key signature returned from a signing operation. Signature is
+/// returned here. Format is R and S integers in big-endian format. 64 bytes for
+/// P256 curve.
+#[derive(Clone, Copy)]
+pub struct Signature {
+    value: [u8; 64],
+}
+
 struct UnknownVariantError;
 
 #[derive(Clone, Copy, Debug)]
@@ -181,3 +221,12 @@ impl Sha {
         Ok(packet)
     }
 }
+
+/*
+    {
+        let aes = atca.aes();
+        aes.init()?;
+        aes.update(data)?;
+        let digest = aes.finalize()?;
+    }
+*/
