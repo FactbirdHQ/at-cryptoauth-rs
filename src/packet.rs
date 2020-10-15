@@ -1,8 +1,9 @@
 use super::command::OpCode;
+use super::error::{Error, ErrorKind, Status};
 use crate::datalink::Transaction;
 use core::convert::TryInto;
 use core::mem::size_of;
-use core::ops::Range;
+use core::ops::RangeTo;
 use crc::{Algorithm, Crc};
 
 // Offset by word_address (1 byte)
@@ -24,8 +25,6 @@ const CUSTOM_ALG: Algorithm<u16> = Algorithm {
 
 /// CRC memoise table
 const CRC16: Crc<u16> = Crc::<u16>::new(&CUSTOM_ALG);
-
-pub struct Error;
 
 pub struct PacketBuilder<'a> {
     buffer: &'a mut [u8],
@@ -51,11 +50,13 @@ impl<'a> PacketBuilder<'a> {
         self
     }
 
+    /// Mode parameter also referred as `param1`.
     pub fn mode(&mut self, mode: u8) -> &mut Self {
         self.mode.replace(mode);
         self
     }
 
+    /// Key ID
     pub fn param2(&mut self, param2: u16) -> &mut Self {
         self.param2.replace(param2);
         self
@@ -68,16 +69,7 @@ impl<'a> PacketBuilder<'a> {
         self.pdu_length.replace(data.as_ref().len());
         self
     }
-    // The same pattern as Reg::write.
-    /*
-        pub fn by_ref<F>(mut self, cls: F) -> Self
-        where
-            F: FnOnce(&mut Self) -> &mut Self,
-        {
-            (cls)(&mut self);
-            self
-        }
-    */
+
     pub fn packet_buffer(&mut self) -> &mut [u8] {
         self.buffer[PACKET_OFFSET..].as_mut()
     }
@@ -107,13 +99,14 @@ impl<'a> PacketBuilder<'a> {
             .as_mut()
             .copy_from_slice(crc.to_le_bytes().as_ref());
         Packet {
-            range: (0..packet_length + PACKET_OFFSET),
+            range: (..packet_length + PACKET_OFFSET),
         }
     }
 }
 
+/// Assuming buffer is alocated elsewhere, `Packet` designates subslice in use.
 pub struct Packet {
-    range: Range<usize>,
+    range: RangeTo<usize>,
 }
 
 impl Packet {
@@ -128,12 +121,33 @@ pub struct Response<'a> {
 
 impl<'a> Response<'a> {
     pub fn new(buffer: &'a [u8]) -> Result<Self, Error> {
+        if buffer.len() < size_of::<u16>() {
+            panic!("Buffer is too small.");
+        }
         let (payload, crc_bytes) = buffer.split_at(buffer.len() - size_of::<u16>());
         let crc = u16::from_le_bytes(crc_bytes.try_into().unwrap_or_else(|_| unreachable!()));
         if crc == CRC16.checksum(&payload) {
             Ok(Self { payload: buffer })
         } else {
-            Err(Error)
+            Err(ErrorKind::RxCrcError.into())
         }
+    }
+
+    /// Check if the response indicates an error. The received data is expected
+    /// to be in the form of a CA device response frame.
+    pub fn error_status(&self) -> Result<(), Error> {
+        // error packets are always 4 bytes long
+        if (self.payload[0] == 0x04) {
+            if let Some(status) = Status::from_u8(self.payload[1]) {
+                return Err(status.into());
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<'a> AsRef<[u8]> for Response<'a> {
+    fn as_ref(&self) -> &[u8] {
+        self.payload
     }
 }
