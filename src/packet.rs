@@ -1,5 +1,5 @@
 use super::command::OpCode;
-use crate::datalink::hal::Transaction;
+use crate::datalink::Transaction;
 use core::convert::TryInto;
 use core::mem::size_of;
 use core::ops::Range;

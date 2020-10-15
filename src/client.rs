@@ -1,5 +1,5 @@
-use super::calib::packet::{Packet, Response};
-use super::datalink::hal::I2c;
+use super::packet::{Packet, Response};
+use super::datalink::I2c;
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};

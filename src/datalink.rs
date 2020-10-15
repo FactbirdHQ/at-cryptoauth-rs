@@ -1,7 +1,7 @@
 // for this implementation of I2C with CryptoAuth chips, txdata is assumed to
 // have ATCAPacket format Devices such as ATECCx08A require a word address value
 // pre-pended to the packet txdata[0] is using _reserved byte of the ATCAPacket
-use super::super::calib::packet::{Packet, Response};
+use super::packet::{Packet, Response};
 use core::fmt::Debug;
 use core::iter::from_fn;
 use core::slice::from_ref;
