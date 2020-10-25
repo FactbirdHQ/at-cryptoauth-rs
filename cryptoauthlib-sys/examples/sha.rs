@@ -11,7 +11,8 @@ use cortex_m_semihosting::hio;
 use cryptoauthlib_sys::hal::I2c as HalI2c;
 use cryptoauthlib_sys::DELAY_WRAPPER;
 use cryptoauthlib_sys::{
-    atca_command, atca_device, atca_iface, calib_info,calib_is_slot_locked, calib_genkey,calib_lock_config_zone, calib_lock_data_zone,calib_get_pubkey,calib_lock_data_slot,
+    atca_command, atca_device, atca_iface, calib_genkey, calib_get_pubkey, calib_info,
+    calib_is_slot_locked, calib_lock_config_zone, calib_lock_data_slot, calib_lock_data_zone,
     calib_read_serial_number, calib_sha, cfg_ateccx08a_i2c_default, initATCADevice,
     ATCA_STATUS_ATCA_SUCCESS,
 };
@@ -132,7 +133,9 @@ fn main() -> ! {
     // Get slot status
     for i in 0..16 {
         let mut is_locked = false;
-        assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe { calib_is_slot_locked(&mut dev, i, &mut is_locked) });
+        assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {
+            calib_is_slot_locked(&mut dev, i, &mut is_locked)
+        });
         writeln!(hstdout, "Slot {}, locked {}", i, is_locked).unwrap();
 
         if i == 1 {

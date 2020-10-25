@@ -3,9 +3,12 @@
 #![allow(non_snake_case)]
 #![no_std]
 mod facade;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 pub mod hal;
 
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 use stm32l4xx_hal::delay::Delay;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 pub static mut DELAY_WRAPPER: Option<Delay> = None;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));

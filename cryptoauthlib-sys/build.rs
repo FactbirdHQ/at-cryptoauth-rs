@@ -1,6 +1,6 @@
 //! Build script for CryptoAuthLib
 //!
-//! Top level CMake task creats `atca_config.h`.
+//! Top level CMake task creates `atca_config.h`.
 use bindgen::RustTarget;
 use cmake::Config;
 use std::env;
@@ -9,10 +9,11 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    match env::var("TARGET")?.as_str() {
-        "thumbv7em-none-eabihf" => {}
-        target => panic!("Target triple {} not supported", target),
-    }
+    let cross_compile = match env::var("TARGET")?.as_str() {
+        "thumbv7em-none-eabihf" => Some(()),
+        // Target triple does not require cross-compiling
+        _ => None,
+    };
 
     // Retrieve SYSROOT path
     let cmd_output = Command::new("arm-none-eabi-gcc")
@@ -24,11 +25,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let out_path = PathBuf::from(env::var("OUT_DIR")?);
 
     // Compile a static link library
-    let dst = Config::new("cryptoauthlib")
-        .define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY")
+    let mut config = Config::new("cryptoauthlib");
+    let dst = cross_compile
+        .iter()
+        .fold(&mut config, |acc, ()| {
+            acc.define("CMAKE_SYSTEM_PROCESSOR", "arm")
+                .define("CMAKE_CROSSCOMPILING", "TRUE")
+        })
         .define("CMAKE_SYSTEM_NAME", "Generic")
-        .define("CMAKE_SYSTEM_PROCESSOR", "arm")
-        .define("CMAKE_CROSSCOMPILING", "TRUE")
+        .define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY")
         .define("ATCA_HAL_I2C", "TRUE")
         .define("ATCA_TNGTLS_SUPPORT", "TRUE")
         .define("ATCA_ATSHA204A_SUPPORT", "FALSE")
@@ -44,12 +49,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build();
 
     // Bind CryptoAuthLib library
-    let bindings = bindgen::Builder::default()
+    let bindings = cross_compile
+        .iter()
+        .fold(bindgen::Builder::default(), |acc, ()| {
+            acc.clang_arg(format!("--sysroot={}", sysroot))
+        })
         .use_core()
         .ctypes_prefix("c_types")
         .derive_default(true)
         .rust_target(RustTarget::Nightly)
-        .clang_arg(format!("--sysroot={}", sysroot))
         .clang_arg("-Icryptoauthlib/lib")
         .clang_arg(format!("-I{}", out_path.join("build/lib").display()))
         .header("cryptoauthlib/lib/cryptoauthlib.h")
