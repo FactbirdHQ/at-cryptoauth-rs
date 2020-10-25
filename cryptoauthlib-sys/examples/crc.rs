@@ -1,13 +1,5 @@
-#![no_main]
-#![no_std]
 extern crate cryptoauthlib_sys;
-extern crate panic_semihosting;
 
-use core::fmt::Write;
-use cortex_m_rt::entry;
-use cortex_m_rt::exception;
-use cortex_m_rt::ExceptionFrame;
-use cortex_m_semihosting::hio;
 use crc::{Algorithm, Crc};
 use cryptoauthlib_sys::atCRC;
 
@@ -22,13 +14,10 @@ const CUSTOM_ALG: Algorithm<u16> = Algorithm {
     residue: 0x0000,
 };
 
-#[entry]
-fn main() -> ! {
-    // Semihosting. Messages will appear in openocd's log output.
-    let mut hstdout = hio::hstdout().unwrap();
+const CRC16: Crc<u16> = Crc::<u16>::new(&CUSTOM_ALG);
 
-    writeln!(hstdout, "Start testing CRC.").unwrap();
-    let crc16 = Crc::<u16>::new(&CUSTOM_ALG);
+fn main() {
+    println!("Start testing CRC.");
     let mut init = b"123456789".clone();
     let mut init_a = b"123456789aaf946042".clone();
     let mut init_b = b"edcb8434325a439fbd".clone();
@@ -54,19 +43,13 @@ fn main() -> ! {
         let check_bytes = &mut [0u8, 0];
         unsafe {
             atCRC(
-                sample.len() as u32,
+                sample.len() as u64,
                 sample.as_mut_ptr(),
                 check_bytes.as_mut_ptr(),
             );
         }
-        assert_eq!(u16::from_le_bytes(*check_bytes), crc16.checksum(sample));
-        writeln!(hstdout, "CRC: {:02x}", crc16.checksum(sample)).unwrap();
+        assert_eq!(u16::from_le_bytes(*check_bytes), CRC16.checksum(sample));
+        println!("CRC: {:02x}", CRC16.checksum(sample));
     }
-    writeln!(hstdout, "CRC test finished.").unwrap();
-    loop {}
-}
-
-#[exception]
-fn HardFault(ef: &ExceptionFrame) -> ! {
-    panic!("{:#?}", ef);
+    println!("CRC test finished.");
 }
