@@ -1,22 +1,86 @@
-use super::packet::{Packet, PacketBuilder, Response};
+// Command definitions
+// Overall structure is modeled after https://github.com/tokio-rs/mini-redis/blob/master/src/cmd/mod.rs
+use super::error::{Error, ErrorKind};
+use super::memory::{Size, Slot, Zone};
+use super::packet::{Packet, PacketBuilder};
 use core::convert::TryFrom;
-use signature::Signer;
-pub struct Error;
 
-/// read_serial_number -> Self
-#[derive(Clone, Copy)]
+/// AES mode: Encrypt
+const MODE_ENCRYPT: u8 = 0x00;
+/// AES mode: Decrypt
+const MODE_DECRYPT: u8 = 0x01;
+/// Initialization, does not accept a message
+const MODE_SHA256_START: u8 = 0x00;
+/// Add 64 bytes in the meesage to the SHA context
+const MODE_SHA256_UPDATE: u8 = 0x01;
+/// Complete the calculation and return the digest
+const MODE_SHA256_END: u8 = 0x02;
+/// Add 64 byte ECC public key in the slot to the SHA context
+#[allow(dead_code)]
+const MODE_SHA256_PUBLIC: u8 = 0x03;
+/// Info mode Revision
+const MODE_REVISION: u8 = 0x00;
+
+// Enumerate objects you may want from the device. Provide a bunch of
+// specialized return types since most of the commands return status code only.
+
+/// Revision number and so on.
+/// A return type of API `info`.
+#[derive(Clone, Copy, Debug)]
+pub struct Word {
+    value: [u8; 0x04],
+}
+
+// Parse a serial number from response buffer.
+impl TryFrom<&[u8]> for Word {
+    type Error = Error;
+    fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
+        if buffer.len() != Size::Word as usize {
+            return Err(ErrorKind::BadParam.into());
+        }
+        let mut value = [0; 0x04];
+        value.as_mut().copy_from_slice(&buffer[0..4]);
+        Ok(Self { value })
+    }
+}
+
+impl AsRef<[u8]> for Word {
+    fn as_ref(&self) -> &[u8] {
+        &self.value
+    }
+}
+
+/// What's this?
+/// A return type of which API?
+#[derive(Clone, Copy, Debug)]
+pub struct Block {
+    value: [u8; 0x10],
+}
+
+impl AsRef<[u8]> for Block {
+    fn as_ref(&self) -> &[u8] {
+        &self.value
+    }
+}
+
+/// Serial number of 9 bytes. Its uniqueness is guaranteed.
+/// A return type of API `read_serial`.
+#[derive(Clone, Copy, Debug)]
 pub struct Serial {
     value: [u8; 9],
 }
 
-// Ideally TryFrom
-impl From<&[u8]> for Serial {
-    fn from(buffer: &[u8]) -> Self {
+// Parse a serial number from response buffer.
+impl TryFrom<&[u8]> for Serial {
+    type Error = Error;
+    fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
+        if buffer.len() >= 9 {
+            return Err(ErrorKind::BadParam.into());
+        }
         let mut value = [0; 9];
-        assert!(buffer.len() >= 9);
         value.as_mut().copy_from_slice(&buffer[0..4]);
         value.as_mut().copy_from_slice(&buffer[8..13]);
-        Serial { value }
+        Ok(Serial { value })
     }
 }
 
@@ -26,23 +90,42 @@ impl AsRef<[u8]> for Serial {
     }
 }
 
-/// AES
-fn encrypt(/*&self,*/ plain: [u8; 16]) -> Option<[u8; 16]> {
-    None
-}
-fn decrypt(/*&self,*/ cipher: [u8; 16]) -> Option<[u8; 16]> {
-    None
-}
-
-/// A public key signature returned from a signing operation. Signature is
-/// returned here. Format is R and S integers in big-endian format. 64 bytes for
-/// P256 curve.
-#[derive(Clone, Copy)]
+/// A public key signature returned from a signing operation. Format is R and
+/// S integers in big-endian format. 64 bytes for P256 curve.
+#[derive(Clone, Copy, Debug)]
 pub struct Signature {
     value: [u8; 64],
 }
 
-struct UnknownVariantError;
+// A digest yielded from cryptographic hash functions.
+// For reference, `digest` crate uses `GenericArray<u8, 32>`.
+#[derive(Clone, Copy, Debug)]
+pub struct Digest {
+    value: [u8; 32],
+}
+
+// Parse digest from response buffer.
+impl TryFrom<&[u8]> for Digest {
+    type Error = Error;
+    fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
+        if buffer.len() != 32 {
+            return Err(ErrorKind::BadParam.into());
+        }
+        let mut value = [0; 32];
+        value.as_mut().copy_from_slice(buffer.as_ref());
+        Ok(Self { value })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PremasterSecret {
+    value: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Nonce {
+    value: [u8; 32],
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum OpCode {
@@ -97,6 +180,7 @@ pub enum OpCode {
 }
 
 /// ChipMode clock divider {M0, M1, M2}
+#[derive(Clone, Copy, Debug)]
 pub enum ClockDivider {
     Zero = 0,
     One = 1,
@@ -127,6 +211,7 @@ const EXEC_TIME_VERIFY: [u32; 3] = [105, 295, 1085];
 const EXEC_TIME_WRITE: [u32; 3] = [45, 45, 45];
 
 impl OpCode {
+    /// Get the typical execution time for the given command.
     pub fn execution_time(&self, div: ClockDivider) -> Option<u32> {
         use OpCode::*;
         match self {
@@ -157,76 +242,181 @@ impl OpCode {
     }
 }
 
-struct CheckMac;
-struct Counter;
-struct DeriveKey;
-struct Ecdh;
+pub(crate) struct CheckMac<'a>(PacketBuilder<'a>);
+pub(crate) struct Counter<'a>(PacketBuilder<'a>);
+pub(crate) struct DeriveKey<'a>(PacketBuilder<'a>);
+pub(crate) struct Ecdh<'a>(PacketBuilder<'a>);
 /// Generate Digest
-struct GenDig;
-struct GenKey;
-struct HMac;
-struct Info;
-struct Lock;
-struct Mac;
-struct Nonce;
-struct Pause;
-struct PrivWrite;
-struct Random;
-struct Read;
-struct Sign;
-struct UpdateExtra;
-struct Verify;
-struct Write;
-struct Sha;
-struct Aes;
-struct Kdf;
-struct SecureBoot;
-struct SelfTest;
+pub(crate) struct GenDig<'a>(PacketBuilder<'a>);
+pub(crate) struct GenKey<'a>(PacketBuilder<'a>);
+pub(crate) struct HMac<'a>(PacketBuilder<'a>);
+pub(crate) struct Info<'a>(PacketBuilder<'a>);
+pub(crate) struct Lock<'a>(PacketBuilder<'a>);
+pub(crate) struct Mac<'a>(PacketBuilder<'a>);
+pub(crate) struct NonceCmd<'a>(PacketBuilder<'a>);
+pub(crate) struct Pause<'a>(PacketBuilder<'a>);
+pub(crate) struct PrivWrite<'a>(PacketBuilder<'a>);
+pub(crate) struct Random<'a>(PacketBuilder<'a>);
+pub(crate) struct Read<'a>(PacketBuilder<'a>);
+pub(crate) struct Sign<'a>(PacketBuilder<'a>);
+pub(crate) struct UpdateExtra<'a>(PacketBuilder<'a>);
+pub(crate) struct Verify<'a>(PacketBuilder<'a>);
+pub(crate) struct Write<'a>(PacketBuilder<'a>);
+pub(crate) struct Sha<'a>(PacketBuilder<'a>);
+pub(crate) struct Aes<'a>(PacketBuilder<'a>);
+pub(crate) struct Kdf<'a>(PacketBuilder<'a>);
+pub(crate) struct SecureBoot<'a>(PacketBuilder<'a>);
+pub(crate) struct SelfTest<'a>(PacketBuilder<'a>);
 
-// Implementation design inspired by digest crate.
-// Not directly applicable because the trait won't allow any member methods to be fallible.
-// Moreover, `digest` requires the client stored in a global static variable.
-//
-// use digest::{Digest, Output};
-// use heapless::consts::U32;
-//
-// impl Digest for Sha {
-//     type OutputSize = U32;
-//     fn new() -> Self { unimplemented!() }
-//     fn update(&mut self, data: impl AsRef<[u8]>) { unimplemented!() }
-//     fn chain(self, data: impl AsRef<[u8]>) -> Self { unimplemented!() }
-//     fn finalize(self) -> Output<Self> { unimplemented!() }
-//     fn finalize_reset(&mut self) -> Output<Self> { unimplemented!() }
-//     fn reset(&mut self) { unimplemented!() }
-//     fn output_size() -> usize { unimplemented!() }
-//     fn digest(data: &[u8]) -> Output<Self> { unimplemented!() }
-// }
+impl<'a> Info<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
 
-impl Sha {
-    fn start<'a>(buffer: &'a mut [u8]) -> Result<Packet, Error> {
-        let mode = 0x00;
-        let packet = PacketBuilder::new(buffer)
+    /// Command execution will return a word containing the revision.
+    pub(crate) fn revision(&mut self) -> Result<Packet, Error> {
+        let packet = self.0.opcode(OpCode::Info).mode(MODE_REVISION).build();
+        Ok(packet)
+    }
+}
+
+/// Nonce
+impl<'a> NonceCmd<'a> {
+    #[allow(dead_code)]
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    // TODO: Usage of Nonce is not clear. In `test/api_atcab/atca_tests_aes.c`, AES
+    // encryption/decryption assumes Nonce value is loaded to TempKey in advance.
+    /*
+        // Load AES keys into TempKey
+        pub(crate) fn load(&mut self) -> Result<Packet, Error> {
+            nonce_load(NONCE_MODE_TARGET_TEMPKEY, g_aes_keys[0], 64);
+        }
+    */
+}
+
+impl<'a> Sha<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    pub(crate) fn start(&mut self) -> Result<Packet, Error> {
+        let packet = self.0.opcode(OpCode::Sha).mode(MODE_SHA256_START).build();
+        Ok(packet)
+    }
+
+    /// Data length cannot exceed 64 bytes.
+    pub(crate) fn update(&mut self, data: impl AsRef<[u8]>) -> Result<Packet, Error> {
+        if data.as_ref().len() >= 64 {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let packet = self
+            .0
             .opcode(OpCode::Sha)
-            .mode(0)
-            .param2(0)
+            .mode(MODE_SHA256_UPDATE)
+            .pdu_data(data)
             .build();
         Ok(packet)
     }
 
-    fn update<'a>(buffer: &'a mut [u8], data: impl AsRef<[u8]>) -> Result<Packet, Error> {
-        let packet = PacketBuilder::new(buffer)
-            .opcode(OpCode::Sha)
-            .pdu_data(data)
+    /// Command execution will return a digest of Block size.
+    pub(crate) fn end(&mut self) -> Result<Packet, Error> {
+        let packet = self.0.opcode(OpCode::Sha).mode(MODE_SHA256_END).build();
+        Ok(packet)
+    }
+}
+
+/// AES
+impl<'a> Aes<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    /// Plain text has length of 16 bytes.
+    pub(crate) fn encrypt(&mut self, slot: Slot, plaintext: &[u8]) -> Result<Packet, Error> {
+        if !slot.is_private_key() {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        if plaintext.len() != 16 as usize {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let packet = self
+            .0
+            .opcode(OpCode::Aes)
+            .mode(MODE_ENCRYPT)
+            .param2(slot as u16)
+            .pdu_data(plaintext)
+            .build();
+        Ok(packet)
+    }
+
+    /// Cipher text has length of 16 bytes.
+    pub(crate) fn decrypt(&mut self, slot: Slot, ciphertext: &[u8]) -> Result<Packet, Error> {
+        if !slot.is_private_key() {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        if ciphertext.len() != 16 as usize {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let packet = self
+            .0
+            .opcode(OpCode::Aes)
+            .mode(MODE_DECRYPT)
+            .param2(slot as u16)
+            .pdu_data(ciphertext)
             .build();
         Ok(packet)
     }
 }
 
-/*
-    {
-        let aes = atca.aes();
-        aes.init()?;
-        aes.update(data)?;
-        let digest = aes.finalize()?;
+/// Read
+impl<'a> Read<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
     }
-*/
+
+    pub(crate) fn slot(&mut self, slot: Slot, block: u8) -> Result<Packet, Error> {
+        let addr = Zone::Data.get_slot_addr(slot, block)?;
+        let mode = Zone::Data.encode(Size::Block);
+        let packet = self.0.opcode(OpCode::Read).mode(mode).param2(addr).build();
+        Ok(packet)
+    }
+
+    pub(crate) fn register(
+        &mut self,
+        zone: Zone,
+        size: Size,
+        block: u8,
+        offset: u8,
+    ) -> Result<Packet, Error> {
+        let addr = zone.get_addr(block, offset)?;
+        let mode = zone.encode(size);
+        let packet = self.0.opcode(OpCode::Read).mode(mode).param2(addr).build();
+        Ok(packet)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha() {
+        let buf = &mut [0x00u8; 0xff];
+        let packet = Sha::new(PacketBuilder::new(buf.as_mut()))
+            .start()
+            .unwrap()
+            .buffer(buf.as_ref());
+        assert_eq!(packet[0x01], 0x07);
+        assert_eq!(packet[0x02], OpCode::Sha as u8);
+        assert_eq!(packet[0x03], MODE_SHA256_START);
+        assert_eq!(packet[0x04..0x06], [0x00, 0x00]);
+    }
+}

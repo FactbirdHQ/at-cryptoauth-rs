@@ -10,9 +10,10 @@ use crc::{Algorithm, Crc};
 const PACKET_OFFSET: usize = 1;
 // PACKET_OFFSET + length (1 byte), opcode (1 byte), p1 (1 byte), p2 (2 bytes)
 const PDU_OFFSET: usize = 6;
-const CMD_SIZE_MIN: usize = 4;
+// Length (1 byte), opcode (1 byte), p1 (1 byte), p2 (2 bytes), crc (2 bytes)
+const CMD_SIZE_MIN: usize = 7;
 
-/// Parameters to calculate CRC.
+// Parameters to calculate CRC.
 const CUSTOM_ALG: Algorithm<u16> = Algorithm {
     poly: 0x8005,
     init: 0x0000,
@@ -23,9 +24,10 @@ const CUSTOM_ALG: Algorithm<u16> = Algorithm {
     residue: 0x0000,
 };
 
-/// CRC memoise table
+// CRC memoise table
 const CRC16: Crc<u16> = Crc::<u16>::new(&CUSTOM_ALG);
 
+#[derive(Debug)]
 pub struct PacketBuilder<'a> {
     buffer: &'a mut [u8],
     pdu_length: Option<usize>,
@@ -80,8 +82,8 @@ impl<'a> PacketBuilder<'a> {
             .iter()
             .fold(CMD_SIZE_MIN, |min, pdu_len| min + pdu_len);
         let opcode = self.opcode.expect("FIXME");
-        let mode = self.mode.unwrap_or(0x00);
-        let param2 = self.param2.unwrap_or(0x00);
+        let mode = self.mode.unwrap_or_default();
+        let param2 = self.param2.unwrap_or_default();
 
         // Packet encoder is Hand-crafted. Any helpful library?
         self.buffer[0] = Transaction::Command as u8;
@@ -105,6 +107,7 @@ impl<'a> PacketBuilder<'a> {
 }
 
 /// Assuming buffer is alocated elsewhere, `Packet` designates subslice in use.
+#[derive(Clone, Copy, Debug)]
 pub struct Packet {
     range: RangeTo<usize>,
 }
@@ -115,39 +118,51 @@ impl Packet {
     }
 }
 
+// Is it possible to classify the response into [] | [u8; WORD] | [u8; BLOCK]?
+#[derive(Clone, Copy, Debug)]
 pub struct Response<'a> {
-    payload: &'a [u8],
+    // status: u8, necessary?
+    pdu: &'a [u8],
 }
 
 impl<'a> Response<'a> {
-    pub fn new(buffer: &'a [u8]) -> Result<Self, Error> {
-        if buffer.len() < size_of::<u16>() {
-            panic!("Buffer is too small.");
-        }
-        let (payload, crc_bytes) = buffer.split_at(buffer.len() - size_of::<u16>());
-        let crc = u16::from_le_bytes(crc_bytes.try_into().unwrap_or_else(|_| unreachable!()));
-        if crc == CRC16.checksum(&payload) {
-            Ok(Self { payload: buffer })
-        } else {
-            Err(ErrorKind::RxCrcError.into())
-        }
-    }
-
     /// Check if the response indicates an error. The received data is expected
     /// to be in the form of a CA device response frame.
-    pub fn error_status(&self) -> Result<(), Error> {
-        // error packets are always 4 bytes long
-        if (self.payload[0] == 0x04) {
-            if let Some(status) = Status::from_u8(self.payload[1]) {
+    /// Extract PDU.
+    pub fn new(buffer: &'a [u8]) -> Result<Self, Error> {
+        // Check if buffer is well-formed.
+        if buffer.len() < 0x04 {
+            // Buffer is too small. Bail out.
+            return Err(ErrorKind::RxFail.into());
+        }
+
+        // Check CRC.
+        let (payload, crc_bytes) = buffer.split_at(buffer.len() - size_of::<u16>());
+        let crc = u16::from_le_bytes(crc_bytes.try_into().unwrap_or_else(|_| unreachable!()));
+        if crc != CRC16.checksum(&payload) {
+            return Err(ErrorKind::RxCrcError.into());
+        }
+
+        // Check error status. Error packets are always 4 bytes long.
+        let (header, pdu) = payload.split_at(2);
+        if header[0] == 0x04 {
+            if let Some(status) = Status::from_u8(header[1]) {
                 return Err(status.into());
             }
         }
-        Ok(())
+
+        Ok(Self { pdu })
     }
 }
 
 impl<'a> AsRef<[u8]> for Response<'a> {
     fn as_ref(&self) -> &[u8] {
-        self.payload
+        self.pdu
+    }
+}
+
+impl<'a> From<&'a mut [u8]> for PacketBuilder<'a> {
+    fn from(buffer: &'a mut [u8]) -> Self {
+        Self::new(buffer)
     }
 }

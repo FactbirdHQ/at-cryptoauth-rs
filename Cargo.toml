@@ -8,10 +8,6 @@ edition = "2018"
 crc = "2.0.0-rc.1"
 heapless = { version = "^0.5", features = ["serde"] }
 
-[dependencies.signature]
-version = "1.2.2"
-default-features = false
-
 [dependencies.embedded-hal]
 version = "0.2.3"
 features = ["unproven"]

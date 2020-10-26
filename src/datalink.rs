@@ -20,17 +20,24 @@ const RETRY: usize = 20;
 
 /// So-called "word address".
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Transaction {
+pub(crate) enum Transaction {
     Reset = 0x00,
     Sleep = 0x01,
     Idle = 0x02,
     Command = 0x03,
+    #[allow(dead_code)]
     Reserved = 0xff,
 }
 
-pub struct I2c<PHY, D> {
+pub(crate) struct I2c<PHY, D> {
     phy: PHY,
     delay: D,
+}
+
+impl<PHY, D> I2c<PHY, D> {
+    pub(crate) fn new(phy: PHY, delay: D) -> Self {
+        Self { phy, delay }
+    }
 }
 
 impl<PHY, D> I2c<PHY, D>
@@ -40,13 +47,9 @@ where
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    pub fn new(phy: PHY, delay: D) -> Self {
-        Self { phy, delay }
-    }
-
     /// Wakes up device, sends the packet, waits for command completion,
     /// receives response, and puts the device into the idle state.
-    pub fn execute<'a>(
+    pub(crate) fn execute<'a>(
         &mut self,
         buffer: &'a mut [u8],
         packet: Packet,
@@ -61,7 +64,7 @@ where
         Response::new(response_buffer).map_err(|_| ErrorKind::CommFail.into())
     }
 
-    pub fn send<T>(&mut self, bytes: &T) -> Result<(), Error>
+    fn send<T>(&mut self, bytes: &T) -> Result<(), Error>
     where
         T: AsRef<[u8]>,
     {
@@ -71,7 +74,7 @@ where
     }
 
     /// Returns response buffer for later processing.
-    pub fn receive<'a>(&mut self, buffer: &'a mut [u8]) -> Result<&'a mut [u8], Error> {
+    fn receive<'a>(&mut self, buffer: &'a mut [u8]) -> Result<&'a mut [u8], Error> {
         // Reset indicates the beginning of transaction.
         let word_address = Transaction::Reset as u8;
         from_fn(|| self.phy.write(ADDRESS, from_ref(&word_address)).into())
@@ -100,7 +103,7 @@ where
             .map_err(|_| ErrorKind::RxFail.into())
     }
 
-    pub fn wake(&mut self) -> Result<(), Error> {
+    fn wake(&mut self) -> Result<(), Error> {
         // Send a single null byte to an absent address.
         self.phy.write(0x00, from_ref(&0x00)).unwrap_err();
 
@@ -120,15 +123,15 @@ where
         }
     }
 
-    pub fn idle(&mut self) -> Result<(), Error> {
+    fn idle(&mut self) -> Result<(), Error> {
         let word_address = Transaction::Idle as u8;
         self.phy
             .write(ADDRESS, from_ref(&word_address))
             .map_err(|_| ErrorKind::TxFail.into())
     }
 
-    pub fn sleep(&mut self) -> Result<(), Error> {
-        let word_address = Transaction::Idle as u8;
+    pub(crate) fn sleep(&mut self) -> Result<(), Error> {
+        let word_address = Transaction::Sleep as u8;
         self.phy
             .write(ADDRESS, from_ref(&word_address))
             .map_err(|_| ErrorKind::TxFail.into())

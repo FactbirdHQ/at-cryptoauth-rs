@@ -85,9 +85,8 @@ impl Status {
             Execution => "chip can't execute the command",
             HealthTest => "random number generator health test error",
             Parse => "command received byte length, opcode or parameter was illegal",
-            Selftest => "chip is in self test failure mode",
+            SelfTest => "chip is in self test failure mode",
             Unknown => "response contains unknown non-zero status byte",
-            WakeSuccess => "chip was successfully woken up",
         }
     }
 }
