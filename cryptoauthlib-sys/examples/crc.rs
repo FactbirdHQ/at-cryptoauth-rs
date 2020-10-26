@@ -1,3 +1,5 @@
+//! Exhibit CRC calculation. Examples below runs on host machine.
+//! `$ cargo run --example crc`
 extern crate cryptoauthlib_sys;
 
 use crc::{Algorithm, Crc};
