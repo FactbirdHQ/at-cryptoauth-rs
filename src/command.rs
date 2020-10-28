@@ -255,6 +255,11 @@ pub(crate) struct Lock<'a>(PacketBuilder<'a>);
 pub(crate) struct Mac<'a>(PacketBuilder<'a>);
 pub(crate) struct NonceCmd<'a>(PacketBuilder<'a>);
 pub(crate) struct Pause<'a>(PacketBuilder<'a>);
+
+// For best security, it is recommended that the `PrivWrite` command not be used,
+// and that private keys be internally generated from the RNG using the `GenKey`
+// command.
+#[allow(dead_code)]
 pub(crate) struct PrivWrite<'a>(PacketBuilder<'a>);
 pub(crate) struct Random<'a>(PacketBuilder<'a>);
 pub(crate) struct Read<'a>(PacketBuilder<'a>);
@@ -267,6 +272,21 @@ pub(crate) struct Aes<'a>(PacketBuilder<'a>);
 pub(crate) struct Kdf<'a>(PacketBuilder<'a>);
 pub(crate) struct SecureBoot<'a>(PacketBuilder<'a>);
 pub(crate) struct SelfTest<'a>(PacketBuilder<'a>);
+
+// Used when signing an internally stored digest. The GenDig command uses
+// SHA-256 to combine a stored value with the contents of TempKey, which must
+// have been valid prior to the execution of this command.
+#[allow(dead_code)]
+impl<'a> GenDig<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    pub(crate) fn gendig(&mut self, key_id: Slot) -> Result<Packet, Error> {
+        let packet = self.0.opcode(OpCode::GenDig).param2(key_id as u16).build();
+        Ok(packet)
+    }
+}
 
 impl<'a> Info<'a> {
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
@@ -341,8 +361,10 @@ impl<'a> Aes<'a> {
             return Err(ErrorKind::BadParam.into());
         }
 
-        if plaintext.len() != 16 as usize {
-            return Err(ErrorKind::BadParam.into());
+        // Input length should be exactly 16 bytes. Otherwise the device
+        // couldn't recognize the command properly.
+        if plaintext.len() > 16 as usize {
+            return Err(ErrorKind::InvalidSize.into());
         }
 
         let packet = self
@@ -351,6 +373,7 @@ impl<'a> Aes<'a> {
             .mode(MODE_ENCRYPT)
             .param2(slot as u16)
             .pdu_data(plaintext)
+            .pdu_length(16)
             .build();
         Ok(packet)
     }
@@ -361,8 +384,10 @@ impl<'a> Aes<'a> {
             return Err(ErrorKind::BadParam.into());
         }
 
+        // Input length should be exactly 16 bytes. Otherwise the device
+        // couldn't recognize the command properly.
         if ciphertext.len() != 16 as usize {
-            return Err(ErrorKind::BadParam.into());
+            return Err(ErrorKind::InvalidSize.into());
         }
 
         let packet = self
@@ -371,6 +396,7 @@ impl<'a> Aes<'a> {
             .mode(MODE_DECRYPT)
             .param2(slot as u16)
             .pdu_data(ciphertext)
+            .pdu_length(16)
             .build();
         Ok(packet)
     }

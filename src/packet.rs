@@ -28,7 +28,7 @@ const CUSTOM_ALG: Algorithm<u16> = Algorithm {
 const CRC16: Crc<u16> = Crc::<u16>::new(&CUSTOM_ALG);
 
 #[derive(Debug)]
-pub struct PacketBuilder<'a> {
+pub(crate) struct PacketBuilder<'a> {
     buffer: &'a mut [u8],
     pdu_length: Option<usize>,
     opcode: Option<OpCode>,
@@ -37,7 +37,7 @@ pub struct PacketBuilder<'a> {
 }
 
 impl<'a> PacketBuilder<'a> {
-    pub fn new(buffer: &'a mut [u8]) -> Self {
+    pub(crate) fn new(buffer: &'a mut [u8]) -> Self {
         Self {
             buffer,
             pdu_length: None,
@@ -47,24 +47,24 @@ impl<'a> PacketBuilder<'a> {
         }
     }
 
-    pub fn opcode(&mut self, opcode: OpCode) -> &mut Self {
+    pub(crate) fn opcode(&mut self, opcode: OpCode) -> &mut Self {
         self.opcode.replace(opcode);
         self
     }
 
     /// Mode parameter also referred as `param1`.
-    pub fn mode(&mut self, mode: u8) -> &mut Self {
+    pub(crate) fn mode(&mut self, mode: u8) -> &mut Self {
         self.mode.replace(mode);
         self
     }
 
     /// Key ID
-    pub fn param2(&mut self, param2: u16) -> &mut Self {
+    pub(crate) fn param2(&mut self, param2: u16) -> &mut Self {
         self.param2.replace(param2);
         self
     }
 
-    pub fn pdu_data(&mut self, data: impl AsRef<[u8]>) -> &mut Self {
+    pub(crate) fn pdu_data(&mut self, data: impl AsRef<[u8]>) -> &mut Self {
         self.buffer[PDU_OFFSET..]
             .as_mut()
             .copy_from_slice(data.as_ref());
@@ -72,11 +72,18 @@ impl<'a> PacketBuilder<'a> {
         self
     }
 
-    pub fn packet_buffer(&mut self) -> &mut [u8] {
+    // Input length cannot exceed the length of underlying buffer. Only use it
+    // for packets of fixed length. Also note that `pdu_data` modifies `pdu_length`.
+    pub(crate) fn pdu_length(&mut self, length: usize) -> &mut Self {
+        self.pdu_length.replace(length);
+        self
+    }
+
+    pub(crate) fn packet_buffer(&mut self) -> &mut [u8] {
         self.buffer[PACKET_OFFSET..].as_mut()
     }
 
-    pub fn build(&mut self) -> Packet {
+    pub(crate) fn build(&mut self) -> Packet {
         let packet_length = self
             .pdu_length
             .iter()
@@ -108,19 +115,19 @@ impl<'a> PacketBuilder<'a> {
 
 /// Assuming buffer is alocated elsewhere, `Packet` designates subslice in use.
 #[derive(Clone, Copy, Debug)]
-pub struct Packet {
+pub(crate) struct Packet {
     range: RangeTo<usize>,
 }
 
 impl Packet {
-    pub fn buffer(self, buffer: &[u8]) -> &[u8] {
+    pub(crate) fn buffer(self, buffer: &[u8]) -> &[u8] {
         buffer[self.range].as_ref()
     }
 }
 
 // Is it possible to classify the response into [] | [u8; WORD] | [u8; BLOCK]?
 #[derive(Clone, Copy, Debug)]
-pub struct Response<'a> {
+pub(crate) struct Response<'a> {
     // status: u8, necessary?
     pdu: &'a [u8],
 }
@@ -129,7 +136,7 @@ impl<'a> Response<'a> {
     /// Check if the response indicates an error. The received data is expected
     /// to be in the form of a CA device response frame.
     /// Extract PDU.
-    pub fn new(buffer: &'a [u8]) -> Result<Self, Error> {
+    pub(crate) fn new(buffer: &'a [u8]) -> Result<Self, Error> {
         // Check if buffer is well-formed.
         if buffer.len() < 0x04 {
             // Buffer is too small. Bail out.

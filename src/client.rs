@@ -9,7 +9,7 @@ use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
 use heapless::{consts, Vec};
 
-pub const PRIVATE_KEY: usize = 0x20;
+pub const PUBLIC_KEY: usize = 0x20;
 
 pub struct AtCaClient<PHY, D> {
     i2c: I2c<PHY, D>,
@@ -23,7 +23,7 @@ impl<PHY, D> AtCaClient<PHY, D> {
         Self { i2c, buffer }
     }
 
-    pub fn packet_builder(&mut self) -> PacketBuilder<'_> {
+    fn packet_builder(&mut self) -> PacketBuilder<'_> {
         self.buffer.clear();
         PacketBuilder::new(&mut self.buffer)
     }
@@ -91,10 +91,10 @@ where
         Serial::try_from(response.as_ref())
     }
 
-    pub fn pubkey(&mut self, slot: Slot) -> Result<[u8;PRIVATE_KEY], Error> {
-        let packet = command::Read::new(self.atca.packet_builder()).slot(slot, 0)?;
+    pub fn pubkey(&mut self, key_id: Slot) -> Result<[u8; PUBLIC_KEY], Error> {
+        let packet = command::Read::new(self.atca.packet_builder()).slot(key_id, 0)?;
         let response = self.atca.execute(packet)?;
-        let mut pubkey = [0x00u8; PRIVATE_KEY];
+        let mut pubkey = [0x00u8; PUBLIC_KEY];
         pubkey.as_mut().copy_from_slice(response.as_ref());
         Ok(pubkey)
     }
@@ -124,9 +124,13 @@ where
             .chunks(block_size)
             .zip(ciphertext.chunks_mut(block_size))
         {
-            // Encrypt plain bytes and write the result to cipher.
+            // Input length should be exactly 16 bytes. Otherwise the device
+            // couldn't recognize the command properly. If the length is not
+            // enough, sufficient number of 0s are padded.
             let packet =
                 command::Aes::new(self.atca.packet_builder()).encrypt(self.key_id, plain)?;
+
+            // Encrypt plain bytes and write the result to cipher.
             let response = self.atca.execute(packet)?;
             if response.as_ref().len() != 16 {
                 return Err(ErrorKind::InvalidSize.into());
@@ -146,9 +150,13 @@ where
             .chunks(block_size)
             .zip(plaintext.chunks_mut(block_size))
         {
-            // Decrypt cipher bytes and write the result to plain.
+            // Input length should be exactly 16 bytes. Otherwise the device
+            // couldn't recognize the command properly. If the length is not
+            // enough, sufficient number of 0s are padded.
             let packet =
                 command::Aes::new(self.atca.packet_builder()).decrypt(self.key_id, cipher)?;
+
+            // Decrypt cipher bytes and write the result to plain.
             let response = self.atca.execute(packet)?;
             if response.as_ref().len() != 16 {
                 return Err(ErrorKind::InvalidSize.into());

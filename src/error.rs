@@ -119,18 +119,18 @@ pub enum ErrorKind {
     /// Timed out while waiting for response. Number of bytes received is > 0.
     RxFail = 0xE6,
     /// Supplied buffer is too small for data required
-    SmallBuffer = 0xEd,
+    SmallBuffer = 0xED,
     /// Timed out while waiting for response. Number of bytes received is 0.
     Timeout = 0xF1,
     /// Device did not respond too many times during a transmission. Could
     /// indicate no device present.
-    TooManyCommRetries = 0xEc,
+    TooManyCommRetries = 0xEC,
     /// Failed to write
     TxFail = 0xF7,
     /// Function or some element of it hasn't been implemented yet
     Unimplemented = 0xF5,
     /// Use flags on the device indicates its consumed fully
-    UseFlagsConsumed = 0xFc,
+    UseFlagsConsumed = 0xFC,
     /// Device did not respond to wake call as expected
     WakeFailed = 0xD0,
 }
