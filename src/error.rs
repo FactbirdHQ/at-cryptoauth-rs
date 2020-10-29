@@ -1,12 +1,12 @@
 use core::fmt;
 
 /// An error type representing ATECC608's erroneous conditions.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Error {
     repr: Repr,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 enum Repr {
     Device(Status),
     Simple(ErrorKind),
@@ -37,7 +37,7 @@ impl fmt::Display for Error {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Status {
     /// response status byte indicates CheckMac failure (status byte = 0x01)
     CheckmacVerifyFailed = 0x01,
@@ -92,7 +92,7 @@ impl Status {
 }
 
 /// A list of specific error causes. Each kind is converted into `Error` type.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum ErrorKind {
     /// Code failed run-time consistency check
     AssertFailure = 0xF6,

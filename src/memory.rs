@@ -1,5 +1,4 @@
 use super::error::{Error, ErrorKind};
-
 /// Zone bit 7 set: Access 32 bytes, otherwise 4 bytes.
 const ZONE_READWRITE_32: u8 = 0x80;
 
@@ -8,6 +7,15 @@ const ZONE_READWRITE_32: u8 = 0x80;
 pub enum Size {
     Word = 0x04,
     Block = 0x20,
+}
+
+impl Size {
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Size::Word => Size::Word as usize,
+            Size::Block => Size::Block as usize,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -21,7 +29,7 @@ impl Zone {
     pub(crate) fn get_slot_addr(&self, slot: Slot, block: u8) -> Result<u16, Error> {
         match self {
             Self::Data if slot.is_private_key() && block == 0 => Ok((slot as u16) << 3),
-            Self::Data if slot.is_certificate() && block <= 1 => {
+            Self::Data if slot.is_certificate() && block <= 2 => {
                 Ok((slot as u16) << 3 | (block as u16) << 8)
             }
             _ => Err(ErrorKind::BadParam.into()),
@@ -37,7 +45,8 @@ impl Zone {
         let addr = block | offset;
         match self {
             Self::Config | Self::Otp => Ok(addr),
-            _ => Err(ErrorKind::BadParam.into()),
+            // Use get_slot_addr instead.
+            Self::Data => Err(ErrorKind::BadParam.into()),
         }
     }
 
@@ -52,6 +61,7 @@ impl Zone {
 #[derive(Copy, Clone, Debug)]
 pub enum Slot {
     /// PrivateKey0x contains 36 bytes, taking 2 block reads.
+    PrivateKey00 = 0x00,
     PrivateKey01 = 0x01,
     PrivateKey02 = 0x02,
     PrivateKey03 = 0x03,

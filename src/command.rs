@@ -31,7 +31,7 @@ pub struct Word {
     value: [u8; 0x04],
 }
 
-// Parse a serial number from response buffer.
+// Parse a word from response buffer.
 impl TryFrom<&[u8]> for Word {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
@@ -52,14 +52,32 @@ impl AsRef<[u8]> for Word {
 
 /// What's this?
 /// A return type of which API?
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Block {
     value: [u8; 0x10],
+}
+
+impl TryFrom<&[u8]> for Block {
+    type Error = Error;
+    fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
+        if buffer.len() != Size::Block as usize {
+            return Err(ErrorKind::BadParam.into());
+        }
+        let mut value = [0; 0x10];
+        value.as_mut().copy_from_slice(&buffer[0..4]);
+        Ok(Self { value })
+    }
 }
 
 impl AsRef<[u8]> for Block {
     fn as_ref(&self) -> &[u8] {
         &self.value
+    }
+}
+
+impl AsMut<[u8]> for Block {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.value
     }
 }
 
@@ -242,18 +260,25 @@ impl OpCode {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct CheckMac<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct Counter<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct DeriveKey<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct Ecdh<'a>(PacketBuilder<'a>);
 /// Generate Digest
 pub(crate) struct GenDig<'a>(PacketBuilder<'a>);
 pub(crate) struct GenKey<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct HMac<'a>(PacketBuilder<'a>);
 pub(crate) struct Info<'a>(PacketBuilder<'a>);
 pub(crate) struct Lock<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct Mac<'a>(PacketBuilder<'a>);
 pub(crate) struct NonceCmd<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct Pause<'a>(PacketBuilder<'a>);
 
 // For best security, it is recommended that the `PrivWrite` command not be used,
@@ -261,16 +286,22 @@ pub(crate) struct Pause<'a>(PacketBuilder<'a>);
 // command.
 #[allow(dead_code)]
 pub(crate) struct PrivWrite<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct Random<'a>(PacketBuilder<'a>);
 pub(crate) struct Read<'a>(PacketBuilder<'a>);
 pub(crate) struct Sign<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct UpdateExtra<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct Verify<'a>(PacketBuilder<'a>);
 pub(crate) struct Write<'a>(PacketBuilder<'a>);
 pub(crate) struct Sha<'a>(PacketBuilder<'a>);
 pub(crate) struct Aes<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct Kdf<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct SecureBoot<'a>(PacketBuilder<'a>);
+#[allow(dead_code)]
 pub(crate) struct SelfTest<'a>(PacketBuilder<'a>);
 
 // Used when signing an internally stored digest. The GenDig command uses
@@ -288,6 +319,14 @@ impl<'a> GenDig<'a> {
     }
 }
 
+/// GenKey
+impl<'a> GenKey<'a> {
+    #[allow(dead_code)]
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+}
+
 impl<'a> Info<'a> {
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
@@ -300,6 +339,30 @@ impl<'a> Info<'a> {
     }
 }
 
+impl<'a> Lock<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    pub(crate) fn zone(&mut self, zone: Zone) -> Result<Packet, Error> {
+        let mode = match zone {
+            Zone::Config => 0x80,
+            Zone::Data => 0x01 | 0x80,
+            Zone::Otp => {
+                return Err(ErrorKind::BadParam.into());
+            }
+        };
+        let packet = self.0.opcode(OpCode::Lock).mode(mode).build();
+        Ok(packet)
+    }
+
+    pub(crate) fn slot(&mut self, key_id: Slot) -> Result<Packet, Error> {
+        let mode = (key_id as u8) << 2 | 0x02 | 0x80;
+        let packet = self.0.opcode(OpCode::Lock).mode(mode).build();
+        Ok(packet)
+    }
+}
+
 /// Nonce
 impl<'a> NonceCmd<'a> {
     #[allow(dead_code)]
@@ -307,8 +370,9 @@ impl<'a> NonceCmd<'a> {
         Self(builder)
     }
 
-    // TODO: Usage of Nonce is not clear. In `test/api_atcab/atca_tests_aes.c`, AES
-    // encryption/decryption assumes Nonce value is loaded to TempKey in advance.
+    // TODO: Usage of Nonce, especially its correct timing is not clear. In
+    // `test/api_atcab/atca_tests_aes.c`, AES encryption/decryption assumes
+    // nonce value is loaded to TempKey in advance.
     /*
         // Load AES keys into TempKey
         pub(crate) fn load(&mut self) -> Result<Packet, Error> {
@@ -363,7 +427,7 @@ impl<'a> Aes<'a> {
 
         // Input length should be exactly 16 bytes. Otherwise the device
         // couldn't recognize the command properly.
-        if plaintext.len() > 16 as usize {
+        if plaintext.len() > 16 {
             return Err(ErrorKind::InvalidSize.into());
         }
 
@@ -415,7 +479,7 @@ impl<'a> Read<'a> {
         Ok(packet)
     }
 
-    pub(crate) fn register(
+    pub(crate) fn read(
         &mut self,
         zone: Zone,
         size: Size,
@@ -425,6 +489,58 @@ impl<'a> Read<'a> {
         let addr = zone.get_addr(block, offset)?;
         let mode = zone.encode(size);
         let packet = self.0.opcode(OpCode::Read).mode(mode).param2(addr).build();
+        Ok(packet)
+    }
+}
+
+/// Sign
+impl<'a> Sign<'a> {
+    #[allow(dead_code)]
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+}
+
+/// Write
+impl<'a> Write<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    pub(crate) fn slot(&mut self, slot: Slot, block: u8, data: &Block) -> Result<Packet, Error> {
+        let addr = Zone::Data.get_slot_addr(slot, block)?;
+        let mode = Zone::Data.encode(Size::Block);
+        let packet = self
+            .0
+            .opcode(OpCode::Write)
+            .mode(mode)
+            .param2(addr)
+            .pdu_data(data)
+            .build();
+        Ok(packet)
+    }
+
+    pub(crate) fn write(
+        &mut self,
+        zone: Zone,
+        size: Size,
+        block: u8,
+        offset: u8,
+        data: impl AsRef<[u8]>,
+    ) -> Result<Packet, Error> {
+        if size.len() != data.as_ref().len() {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let addr = zone.get_addr(block, offset)?;
+        let mode = zone.encode(size);
+        let packet = self
+            .0
+            .opcode(OpCode::Write)
+            .mode(mode)
+            .param2(addr)
+            .pdu_data(data)
+            .build();
         Ok(packet)
     }
 }
