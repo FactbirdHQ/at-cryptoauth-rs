@@ -52,6 +52,7 @@ impl Zone {
 #[derive(Copy, Clone, Debug)]
 pub enum Slot {
     /// PrivateKey0x contains 36 bytes, taking 2 block reads.
+    PrivateKey00 = 0x00,
     PrivateKey01 = 0x01,
     PrivateKey02 = 0x02,
     PrivateKey03 = 0x03,

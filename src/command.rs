@@ -300,6 +300,30 @@ impl<'a> Info<'a> {
     }
 }
 
+impl<'a> Lock<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    pub(crate) fn zone(&mut self, zone: Zone) -> Result<Packet, Error> {
+        let mode = match zone {
+            Zone::Config => 0x00,
+            Zone::Data => 0x00,
+            Zone::Otp => {
+                return Err(ErrorKind::BadParam.into());
+            }
+        };
+        let packet = self.0.opcode(OpCode::Lock).mode(mode).build();
+        Ok(packet)
+    }
+
+    pub(crate) fn slot(&mut self, key_id: Slot) -> Result<Packet, Error> {
+        let mode = 0x00;
+        let packet = self.0.opcode(OpCode::Lock).mode(mode).build();
+        Ok(packet)
+    }
+}
+
 /// Nonce
 impl<'a> NonceCmd<'a> {
     #[allow(dead_code)]
@@ -363,7 +387,7 @@ impl<'a> Aes<'a> {
 
         // Input length should be exactly 16 bytes. Otherwise the device
         // couldn't recognize the command properly.
-        if plaintext.len() > 16 as usize {
+        if plaintext.len() > 16 {
             return Err(ErrorKind::InvalidSize.into());
         }
 

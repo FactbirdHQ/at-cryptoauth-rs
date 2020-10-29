@@ -1,15 +1,18 @@
-use super::command::{self, Digest, Info, Serial, Signature, Word};
+use super::command::{self, Digest, Info, Lock, Serial, Signature, Word};
 use super::datalink::I2c;
 use super::error::{Error, ErrorKind};
 use super::memory::{Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder, Response};
-use core::convert::TryFrom;
+use super::tngtls::TrustAndGo;
+use core::convert::{identity, TryFrom};
 use core::fmt::Debug;
+use core::slice;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
 use heapless::{consts, Vec};
 
-pub const PUBLIC_KEY: usize = 0x20;
+pub const PUBLIC_KEY: usize = 0x40;
+const BUFFER_LEN: usize = 192;
 
 pub struct AtCaClient<PHY, D> {
     i2c: I2c<PHY, D>,
@@ -25,6 +28,9 @@ impl<PHY, D> AtCaClient<PHY, D> {
 
     fn packet_builder(&mut self) -> PacketBuilder<'_> {
         self.buffer.clear();
+        self.buffer.resize(BUFFER_LEN, 0x00u8).unwrap_or_else(|()| {
+            unreachable!("Buffer of the exact length must have been allocated.")
+        });
         PacketBuilder::new(&mut self.buffer)
     }
 
@@ -56,6 +62,10 @@ where
         self.i2c.execute(&mut self.buffer, packet, 10)
     }
 
+    pub fn tng(&mut self) -> Result<TrustAndGo<'_, PHY, D>, Error> {
+        TrustAndGo::try_from(self)
+    }
+
     pub fn sleep(&mut self) -> Result<(), Error> {
         self.i2c.sleep()
     }
@@ -67,7 +77,7 @@ where
     }
 }
 
-/// Memory zones consists of config, OTP and data.
+/// Memory zones consists of config, data and OTP.
 pub struct Memory<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
 }
@@ -92,11 +102,79 @@ where
     }
 
     pub fn pubkey(&mut self, key_id: Slot) -> Result<[u8; PUBLIC_KEY], Error> {
-        let packet = command::Read::new(self.atca.packet_builder()).slot(key_id, 0)?;
-        let response = self.atca.execute(packet)?;
         let mut pubkey = [0x00u8; PUBLIC_KEY];
-        pubkey.as_mut().copy_from_slice(response.as_ref());
-        Ok(pubkey)
+        (0..=2u8)
+            .scan(0, |offset, i| {
+                // TODO: Elaborate creation of ranges.
+                let ranges = match i {
+                    0 => slice::from_ref(&(0x04..0x20)),
+                    1 => &[0x00..0x04, 0x08..0x20],
+                    2 => slice::from_ref(&(0x00..0x08)),
+                    _ => unreachable!(),
+                };
+
+                let result = command::Read::new(self.atca.packet_builder())
+                    .slot(key_id, i)
+                    .and_then(|packet| {
+                        let response = self.atca.execute(packet)?;
+                        for range in ranges {
+                            let dst = (*offset..*offset + range.len());
+                            pubkey[dst].copy_from_slice(&response.as_ref()[range.clone()]);
+                            *offset += range.len();
+                        }
+                        Ok(())
+                    });
+                Some(result)
+            })
+            .try_for_each(identity)
+            .map(|()| pubkey)
+    }
+
+    pub fn is_slot_locked(&mut self, slot: Slot) -> Result<bool, Error> {
+        let zone = Zone::Config;
+        let size = Size::Word;
+        let block = 2;
+        let word_offset = 6;
+        let packet = command::Read::new(self.atca.packet_builder()).register(
+            zone,
+            size,
+            block,
+            word_offset,
+        )?;
+        let response = self.atca.execute(packet)?;
+        let word = Word::try_from(response.as_ref())?;
+        let slot_locked_bytes = u16::from_le_bytes([word.as_ref()[0], word.as_ref()[1]]);
+        Ok(slot_locked_bytes & (0x01u16 << slot as u32) == 0x00)
+    }
+
+    pub fn is_locked(&mut self, zone: Zone) -> Result<bool, Error> {
+        let zone = Zone::Config;
+        let size = Size::Word;
+        let block = 2;
+        let word_offset = 5;
+        let packet = command::Read::new(self.atca.packet_builder()).register(
+            zone,
+            size,
+            block,
+            word_offset,
+        )?;
+        let response = self.atca.execute(packet)?;
+        let word = Word::try_from(response.as_ref())?;
+        match zone {
+            Zone::Config => Ok(word.as_ref()[3] != 0x55),
+            Zone::Data => Ok(word.as_ref()[2] != 0x55),
+            Zone::Otp => Err(ErrorKind::BadParam.into()),
+        }
+    }
+
+    pub fn lock_slot(&mut self, key_id: Slot) -> Result<(), Error> {
+        let packet = Lock::new(self.atca.packet_builder()).slot(key_id)?;
+        self.atca.execute(packet).map(drop)
+    }
+
+    pub fn lock(&mut self, zone: Zone) -> Result<(), Error> {
+        let packet = Lock::new(self.atca.packet_builder()).zone(zone)?;
+        self.atca.execute(packet).map(drop)
     }
 }
 
