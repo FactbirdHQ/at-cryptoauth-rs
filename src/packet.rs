@@ -108,6 +108,7 @@ impl<'a> PacketBuilder<'a> {
             .as_mut()
             .copy_from_slice(crc.to_le_bytes().as_ref());
         Packet {
+            opcode,
             range: (..packet_length + PACKET_OFFSET),
         }
     }
@@ -116,10 +117,15 @@ impl<'a> PacketBuilder<'a> {
 /// Assuming buffer is alocated elsewhere, `Packet` designates subslice in use.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Packet {
+    opcode: OpCode,
     range: RangeTo<usize>,
 }
 
 impl Packet {
+    pub(crate) fn opcode(&self) -> &OpCode {
+        &self.opcode
+    }
+
     pub(crate) fn buffer(self, buffer: &[u8]) -> &[u8] {
         buffer[self.range].as_ref()
     }

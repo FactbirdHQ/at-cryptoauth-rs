@@ -53,12 +53,12 @@ where
         &mut self,
         buffer: &'a mut [u8],
         packet: Packet,
-        exec_time: u32,
+        exec_time: Option<u32>,
     ) -> Result<Response<'a>, Error> {
         self.wake()?;
         self.send(&packet.buffer(buffer))?;
         // Wait for the device to finish its job.
-        self.delay.delay_us(exec_time);
+        self.delay.delay_us(exec_time.unwrap_or(1));
         let response_buffer = self.receive(buffer)?;
         self.idle()?;
         Response::new(response_buffer).map_err(|_| ErrorKind::CommFail.into())

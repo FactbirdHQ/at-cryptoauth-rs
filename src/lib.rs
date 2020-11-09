@@ -1,5 +1,6 @@
 #![no_std]
 pub mod client;
+pub mod clock_divider;
 pub mod command;
 pub mod datalink;
 pub mod error;

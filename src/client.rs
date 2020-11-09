@@ -1,3 +1,4 @@
+use super::clock_divider::ClockDivider;
 use super::command::{self, Block, Digest, Info, Lock, Serial, Signature, Word};
 use super::datalink::I2c;
 use super::error::{Error, ErrorKind};
@@ -17,13 +18,18 @@ const BUFFER_LEN: usize = 192;
 pub struct AtCaClient<PHY, D> {
     i2c: I2c<PHY, D>,
     buffer: Vec<u8, consts::U192>,
+    clock_divider: ClockDivider,
 }
 
 impl<PHY, D> AtCaClient<PHY, D> {
     pub fn new(phy: PHY, delay: D) -> Self {
         let i2c = I2c::new(phy, delay);
         let buffer = Vec::new();
-        Self { i2c, buffer }
+        Self {
+            i2c,
+            buffer,
+            clock_divider: ClockDivider::Zero,
+        }
     }
 
     fn packet_builder(&mut self) -> PacketBuilder<'_> {
@@ -59,7 +65,8 @@ where
     D: DelayUs<u32>,
 {
     fn execute(&mut self, packet: Packet) -> Result<Response<'_>, Error> {
-        self.i2c.execute(&mut self.buffer, packet, 10)
+        let exec_time = self.clock_divider.execution_time(packet.opcode());
+        self.i2c.execute(&mut self.buffer, packet, exec_time)
     }
 
     pub fn tng(&mut self) -> Result<TrustAndGo<'_, PHY, D>, Error> {
@@ -77,12 +84,11 @@ where
     }
 }
 
-/// Memory zones consists of config, data and OTP.
+// Memory zones consist of config, data and OTP.
 pub struct Memory<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
 }
 
-// Only expose the highest level APIs.
 impl<'a, PHY, D> Memory<'a, PHY, D>
 where
     PHY: Read + Write,
@@ -207,7 +213,7 @@ where
 }
 
 // Method signature is taken from cipher::block::BlockCipher.
-/// AES
+// AES
 pub struct Aes<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
     key_id: Slot,
@@ -291,12 +297,11 @@ where
 //     fn output_size() -> usize { unimplemented!() }
 //     fn digest(data: &[u8]) -> Output<Self> { unimplemented!() }
 // }
-/// SHA
+// SHA
 pub struct Sha<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
 }
 
-// Only expose the highest level APIs.
 impl<'a, PHY, D> Sha<'a, PHY, D>
 where
     PHY: Read + Write,
@@ -335,13 +340,12 @@ where
 }
 
 // Method signatures are taken from signature::DigestSigner.
-/// Sign
+// Sign
 pub struct Sign<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
     key_id: Slot,
 }
 
-// Only expose the highest level APIs.
 impl<'a, PHY, D> Sign<'a, PHY, D>
 where
     PHY: Read + Write,

@@ -7,7 +7,7 @@
 // being used with AES keys and commands. 7. X.509 Compressed Certificate
 // Storage.
 use super::client::AtCaClient;
-use super::command::ClockDivider;
+use super::clock_divider::ClockDivider;
 use super::error::Error;
 use super::memory::{Slot, Zone};
 use core::convert::TryFrom;

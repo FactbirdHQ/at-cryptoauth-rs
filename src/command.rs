@@ -197,69 +197,6 @@ pub enum OpCode {
     SelfTest = 0x77,
 }
 
-/// ChipMode clock divider {M0, M1, M2}
-#[derive(Clone, Copy, Debug)]
-pub enum ClockDivider {
-    Zero = 0,
-    One = 1,
-    Two = 2,
-}
-
-const EXEC_TIME_AES: [u32; 3] = [27, 27, 27];
-const EXEC_TIME_CHECKMAC: [u32; 3] = [40, 40, 40];
-const EXEC_TIME_COUNTER: [u32; 3] = [25, 25, 25];
-const EXEC_TIME_DERIVE_KEY: [u32; 3] = [50, 50, 50];
-const EXEC_TIME_ECDH: [u32; 3] = [172, 75, 531];
-const EXEC_TIME_GENDIG: [u32; 3] = [35, 25, 35];
-const EXEC_TIME_GENKEY: [u32; 3] = [215, 115, 653];
-const EXEC_TIME_INFO: [u32; 3] = [5, 5, 5];
-const EXEC_TIME_KDF: [u32; 3] = [165, 165, 165];
-const EXEC_TIME_LOCK: [u32; 3] = [35, 35, 35];
-const EXEC_TIME_MAC: [u32; 3] = [55, 55, 55];
-const EXEC_TIME_NONCE: [u32; 3] = [20, 20, 20];
-const EXEC_TIME_PRIVWRITE: [u32; 3] = [50, 50, 50];
-const EXEC_TIME_RANDOM: [u32; 3] = [23, 23, 23];
-const EXEC_TIME_READ: [u32; 3] = [5, 5, 5];
-const EXEC_TIME_SECUREBOOT: [u32; 3] = [160, 80, 480];
-const EXEC_TIME_SELFTEST: [u32; 3] = [625, 250, 2324];
-const EXEC_TIME_SHA: [u32; 3] = [36, 42, 75];
-const EXEC_TIME_SIGN: [u32; 3] = [115, 220, 665];
-const EXEC_TIME_UPDATE_EXTRA: [u32; 3] = [10, 10, 10];
-const EXEC_TIME_VERIFY: [u32; 3] = [105, 295, 1085];
-const EXEC_TIME_WRITE: [u32; 3] = [45, 45, 45];
-
-impl OpCode {
-    /// Get the typical execution time for the given command.
-    pub fn execution_time(&self, div: ClockDivider) -> Option<u32> {
-        use OpCode::*;
-        match self {
-            CheckMac => EXEC_TIME_CHECKMAC[div as usize].into(),
-            Counter => EXEC_TIME_COUNTER[div as usize].into(),
-            DeriveKey => EXEC_TIME_DERIVE_KEY[div as usize].into(),
-            Ecdh => EXEC_TIME_ECDH[div as usize].into(),
-            GenDig => EXEC_TIME_GENDIG[div as usize].into(),
-            GenKey => EXEC_TIME_GENKEY[div as usize].into(),
-            Info => EXEC_TIME_INFO[div as usize].into(),
-            Lock => EXEC_TIME_LOCK[div as usize].into(),
-            Mac => EXEC_TIME_MAC[div as usize].into(),
-            Nonce => EXEC_TIME_NONCE[div as usize].into(),
-            PrivWrite => EXEC_TIME_PRIVWRITE[div as usize].into(),
-            Random => EXEC_TIME_RANDOM[div as usize].into(),
-            Read => EXEC_TIME_READ[div as usize].into(),
-            Sign => EXEC_TIME_SIGN[div as usize].into(),
-            UpdateExtra => EXEC_TIME_UPDATE_EXTRA[div as usize].into(),
-            Verify => EXEC_TIME_VERIFY[div as usize].into(),
-            Write => EXEC_TIME_WRITE[div as usize].into(),
-            Sha => EXEC_TIME_SHA[div as usize].into(),
-            Aes => EXEC_TIME_AES[div as usize].into(),
-            Kdf => EXEC_TIME_KDF[div as usize].into(),
-            SecureBoot => EXEC_TIME_SECUREBOOT[div as usize].into(),
-            SelfTest => EXEC_TIME_SELFTEST[div as usize].into(),
-            _ => None,
-        }
-    }
-}
-
 #[allow(dead_code)]
 pub(crate) struct CheckMac<'a>(PacketBuilder<'a>);
 #[allow(dead_code)]
