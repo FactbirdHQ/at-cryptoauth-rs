@@ -123,27 +123,6 @@ fn main() -> ! {
         ]
     );
 
-    unsafe { calib_lock_config_zone(&mut dev) };
-    writeln!(hstdout, "Config zone locked").unwrap();
-    unsafe { calib_lock_data_zone(&mut dev) };
-    writeln!(hstdout, "Data zone locked").unwrap();
-
-    // Get slot status
-    for i in 0..16 {
-        let mut is_locked = false;
-        assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {
-            calib_is_slot_locked(&mut dev, i, &mut is_locked)
-        });
-        writeln!(hstdout, "Slot {}, locked {}", i, is_locked).unwrap();
-
-        if i == 1 {
-            let buffer = &mut [0x00; 64];
-            unsafe { calib_get_pubkey(&mut dev, i, buffer.as_mut_ptr()) };
-            writeln!(hstdout, "{:02x?}", &buffer[0..32]).unwrap();
-        }
-    }
-    // assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {calib_get_zone_size(&mut dev, 0, )});
-
     writeln!(hstdout, "ATECC608A test finished.").unwrap();
     loop {}
 }

@@ -3,12 +3,3 @@ name = "at-cryptoauth"
 version = "0.1.0"
 authors = ["Kei Shirakizawa <ks@blackbird.online>"]
 edition = "2018"
-
-[dependencies.embedded-hal]
-version = "0.2.3"
-features = ["unproven"]
-
-[dev-dependencies.stm32l4xx-hal]
-git = "https://github.com/BlackbirdHQ/stm32l4xx-hal.git"
-branch = "i2c-enhancement-pr-to-be-made"
-features = ["rt", "stm32l4x5"]

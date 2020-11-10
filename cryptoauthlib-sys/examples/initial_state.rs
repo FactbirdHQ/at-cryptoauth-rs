@@ -11,9 +11,8 @@ use cortex_m_semihosting::hio;
 use cryptoauthlib_sys::hal::I2c as HalI2c;
 use cryptoauthlib_sys::DELAY_WRAPPER;
 use cryptoauthlib_sys::{
-    atca_command, atca_device, atca_iface, calib_genkey, calib_get_pubkey, calib_info,
-    calib_is_slot_locked, calib_lock_config_zone, calib_lock_data_slot, calib_lock_data_zone,
-    calib_read_serial_number, calib_sha, cfg_ateccx08a_i2c_default, initATCADevice,
+    atca_command, atca_device, atca_iface, calib_info, calib_is_locked, calib_is_slot_locked,
+    calib_read_config_zone, calib_read_serial_number, cfg_ateccx08a_i2c_default, initATCADevice,
     ATCA_STATUS_ATCA_SUCCESS,
 };
 use hal::delay::Delay;
@@ -102,47 +101,55 @@ fn main() -> ! {
     assert_eq!(sn_buf[0..2], [0x01, 0x23]);
     assert_eq!(sn_buf[8], 0xee);
 
-    // SHA
-    let sha_len = 10;
-    let sha_buf = &mut [0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-    let sha_digest = &mut [0u8; 32];
+    // Check lock status
+    let mut is_config_locked = false;
     assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {
-        calib_sha(
+        calib_is_locked(
             &mut dev,
-            sha_len,
-            sha_buf.as_mut_ptr(),
-            sha_digest.as_mut_ptr(),
+            0x00, /*LOCK_ZONE_CONFIG*/
+            &mut is_config_locked,
         )
     });
+    assert_eq!(is_config_locked, false);
+    let mut is_data_locked = false;
+    assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {
+        calib_is_locked(&mut dev, 0x01 /*LOCK_ZONE_DATA*/, &mut is_data_locked)
+    });
+    assert_eq!(is_data_locked, false);
+
+    // Get lock status for each slot
+    let is_slot_locked = (0x00..0x10).fold([false; 0x10], |mut is_slot_locked, i| {
+        assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {
+            calib_is_slot_locked(&mut dev, i, &mut is_slot_locked[i as usize])
+        });
+        is_slot_locked
+    });
+    assert_eq!(is_slot_locked.iter().any(|&b| b), false);
+
+    // Get the whole config data
+    // 0x80 bytes for ATECC devices.
+    let config_buf = &mut [0u8; 0x80];
+    assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {
+        calib_read_config_zone(&mut dev, config_buf.as_mut_ptr())
+    });
+    assert_eq!(config_buf[0..4], sn_buf[0..4]);
+    assert_eq!(config_buf[4..8], revision_buf[..]);
+    assert_eq!(config_buf[8..13], sn_buf[4..9]);
     assert_eq!(
-        sha_digest,
-        &[
-            0x1f, 0x82, 0x5a, 0xa2, 0xf0, 0x02, 0x0e, 0xf7, 0xcf, 0x91, 0xdf, 0xa3, 0x0d, 0xa4,
-            0x66, 0x8d, 0x79, 0x1c, 0x5d, 0x48, 0x24, 0xfc, 0x8e, 0x41, 0x35, 0x4b, 0x89, 0xec,
-            0x05, 0x79, 0x5a, 0xb3
+        config_buf[13..],
+        [
+            /* 0x01, 0x23, 0x96, 0x94, 0x00, 0x00, 0x60, 0x02, 0x46, 0xf2, 0x02, 0x6c, 0xee, */
+            0x01, 0x41, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x83, 0x20, 0x87, 0x20, 0x8f, 0x20, 0xc4,
+            0x8f, 0x8f, 0x8f, 0x8f, 0x8f, 0x9f, 0x8f, 0xaf, 0x8f, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xaf, 0x8f, 0xff, 0xff, 0xff,
+            0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x55, 0x55, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x33,
+            0x00, 0x33, 0x00, 0x33, 0x00, 0x1c, 0x00, 0x1c, 0x00, 0x1c, 0x00, 0x1c, 0x00, 0x1c,
+            0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c,
+            0x00, 0x1c, 0x00
         ]
     );
-
-    unsafe { calib_lock_config_zone(&mut dev) };
-    writeln!(hstdout, "Config zone locked").unwrap();
-    unsafe { calib_lock_data_zone(&mut dev) };
-    writeln!(hstdout, "Data zone locked").unwrap();
-
-    // Get slot status
-    for i in 0..16 {
-        let mut is_locked = false;
-        assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {
-            calib_is_slot_locked(&mut dev, i, &mut is_locked)
-        });
-        writeln!(hstdout, "Slot {}, locked {}", i, is_locked).unwrap();
-
-        if i == 1 {
-            let buffer = &mut [0x00; 64];
-            unsafe { calib_get_pubkey(&mut dev, i, buffer.as_mut_ptr()) };
-            writeln!(hstdout, "{:02x?}", &buffer[0..32]).unwrap();
-        }
-    }
-    // assert_eq!(ATCA_STATUS_ATCA_SUCCESS, unsafe {calib_get_zone_size(&mut dev, 0, )});
 
     writeln!(hstdout, "ATECC608A test finished.").unwrap();
     loop {}

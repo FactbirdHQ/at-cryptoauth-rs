@@ -19,5 +19,5 @@ panic-halt = "0.2.0"
 panic-semihosting = "0.5.0"
 
 [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dependencies]
-stm32l4xx-hal = { git = "https://github.com/BlackbirdHQ/stm32l4xx-hal.git", branch = "i2c-enhancement-pr-to-be-made", features = ["rt", "stm32l4x5"] }
+stm32l4xx-hal = { git = "https://github.com/stm32-rs/stm32l4xx-hal.git", features = ["rt", "stm32l4x5"] }
 embedded-hal = { version = "0.2.3", features = ["unproven"] }
