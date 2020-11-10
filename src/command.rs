@@ -26,9 +26,9 @@ const MODE_REVISION: u8 = 0x00;
 
 /// Revision number and so on.
 /// A return type of API `info`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Word {
-    value: [u8; 0x04],
+    value: [u8; Size::Word as usize],
 }
 
 // Parse a word from response buffer.
@@ -38,15 +38,22 @@ impl TryFrom<&[u8]> for Word {
         if buffer.len() != Size::Word as usize {
             return Err(ErrorKind::BadParam.into());
         }
-        let mut value = [0; 0x04];
-        value.as_mut().copy_from_slice(&buffer[0..4]);
-        Ok(Self { value })
+
+        let mut value = Self::default();
+        value.as_mut().copy_from_slice(buffer);
+        Ok(value)
     }
 }
 
 impl AsRef<[u8]> for Word {
     fn as_ref(&self) -> &[u8] {
         &self.value
+    }
+}
+
+impl AsMut<[u8]> for Word {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.value
     }
 }
 
@@ -63,9 +70,10 @@ impl TryFrom<&[u8]> for Block {
         if buffer.len() != Size::Block as usize {
             return Err(ErrorKind::BadParam.into());
         }
-        let mut value = [0; 0x10];
-        value.as_mut().copy_from_slice(&buffer[0..4]);
-        Ok(Self { value })
+
+        let mut value = Self::default();
+        value.as_mut().copy_from_slice(buffer);
+        Ok(value)
     }
 }
 
@@ -92,12 +100,12 @@ pub struct Serial {
 impl TryFrom<&[u8]> for Serial {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
-        if buffer.len() >= 9 {
+        if buffer.len() != Size::Block as usize {
             return Err(ErrorKind::BadParam.into());
         }
         let mut value = [0; 9];
-        value.as_mut().copy_from_slice(&buffer[0..4]);
-        value.as_mut().copy_from_slice(&buffer[8..13]);
+        value[0..4].as_mut().copy_from_slice(&buffer[0..4]);
+        value[4..9].as_mut().copy_from_slice(&buffer[8..13]);
         Ok(Serial { value })
     }
 }
@@ -132,6 +140,12 @@ impl TryFrom<&[u8]> for Digest {
         let mut value = [0; 32];
         value.as_mut().copy_from_slice(buffer.as_ref());
         Ok(Self { value })
+    }
+}
+
+impl AsRef<[u8]> for Digest {
+    fn as_ref(&self) -> &[u8] {
+        &self.value
     }
 }
 

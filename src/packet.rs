@@ -65,10 +65,11 @@ impl<'a> PacketBuilder<'a> {
     }
 
     pub(crate) fn pdu_data(&mut self, data: impl AsRef<[u8]>) -> &mut Self {
-        self.buffer[PDU_OFFSET..]
+        let data_length = data.as_ref().len();
+        self.buffer[PDU_OFFSET..PDU_OFFSET + data_length]
             .as_mut()
             .copy_from_slice(data.as_ref());
-        self.pdu_length.replace(data.as_ref().len());
+        self.pdu_length.replace(data_length);
         self
     }
 
@@ -157,9 +158,9 @@ impl<'a> Response<'a> {
         }
 
         // Check error status. Error packets are always 4 bytes long.
-        let (header, pdu) = payload.split_at(2);
+        let (header, pdu) = payload.split_at(1);
         if header[0] == 0x04 {
-            if let Some(status) = Status::from_u8(header[1]) {
+            if let Some(status) = Status::from_u8(pdu[0]) {
                 return Err(status.into());
             }
         }
