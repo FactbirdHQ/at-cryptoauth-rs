@@ -7,27 +7,64 @@
 // being used with AES keys and commands. 7. X.509 Compressed Certificate
 // Storage.
 use super::client::AtCaClient;
-use super::clock_divider::ClockDivider;
 use super::error::Error;
-use super::memory::{Slot, Zone};
+use super::memory::{Size, Slot, Zone};
 use core::convert::TryFrom;
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
 
+// Miscellaneous device states.
 pub const AUTH_PRIVATE_KEY: Slot = Slot::PrivateKey00;
 pub const SIGN_PRIVATE_KEY: Slot = Slot::PrivateKey01;
 pub const USER_PRIVATE_KEY1: Slot = Slot::PrivateKey02;
 pub const USER_PRIVATE_KEY2: Slot = Slot::PrivateKey03;
 pub const USER_PRIVATE_KEY3: Slot = Slot::PrivateKey04;
+pub const IO_PROTECTION_KEY: Slot = Slot::PrivateKey06;
 pub const AES_KEY: Slot = Slot::Certificate09;
+pub const DEVICE_CERTIFICATE: Slot = Slot::Certificate0a;
+pub const SIGNER_PUBLIC_KEY: Slot = Slot::Certificate0b;
+pub const SIGNER_CERTIFICATE: Slot = Slot::Certificate0c;
 
-// Miscellaneous device states.
-//
-// TODO: Diff factory default and TNGTLS for each item in config zone bit by
-// bit. Declare the differences below as a set of local constants.
-#[allow(dead_code)]
-pub(crate) const CLOCK_DIVIDER: ClockDivider = ClockDivider::Zero;
+const TNG_TLS_SLOT_CONFIG_INDEX: usize = 20;
+const TNG_TLS_SLOT_CONFIG_DATA: [u8; Size::Block as usize] = [
+    // Index 20..=51, block = 0, offset = 5
+    0x85, 0x00, // Slot 0x00, Primary private key
+    0x82, 0x00, // Slot 0x01, Internal sign private key
+    0x85, 0x20, 0x85, 0x20, 0x85, 0x20, // Slot 02, 03 and 04, Secondary private keys 1-3
+    0x8f, 0x8f, // Slot 0x05, reserved.
+    0x8f, 0x0f, // Slot 0x06, I/O protection key
+    0xaf, 0x8f, // Slot 0x07, reserved.
+    0x0f, 0x0f, // Slot 0x08, General data
+    0x8f, 0x0f, // Slot 0x09, AES key
+    0x0f, 0x8f, // Slot 0x0a, Device compressed certificate
+    0x0f, 0x8f, // Slot 0x0b, Signer public key
+    0x0f, 0x8f, // Slot 0x0c, Signer compressed certificate
+    0x00, 0x00, 0x00, 0x00, 0xaf, 0x8f, // Slot 0x0d, 0x0e and 0x0f, reserved.
+];
+
+const TNG_TLS_CHIP_OPTIONS_INDEX: usize = 88;
+const TNG_TLS_CHIP_OPTIONS: [u8; Size::Word as usize] = [
+    // Index 88..=91, block = 2, offset = 6
+    0xff, 0xff, 0x60, 0x0e,
+];
+
+const TNG_TLS_KEY_CONFIG_INDEX: usize = 96;
+const TNG_TLS_KEY_CONFIG_DATA: [u8; Size::Block as usize] = [
+    // Index 96..=127, block = 3, offset = 0
+    0x53, 0x00, // 0x00
+    0x53, 0x00, // 0x01
+    0x73, 0x00, 0x73, 0x00, 0x73, 0x00, // 02, 03 and 04
+    0x1c, 0x00, // 0x05, reserved.
+    0x7c, 0x00, // 0x06
+    0x3c, 0x00, // 0x07, reserved.
+    0x3c, 0x00, // 0x08
+    0x1a, 0x00, // 0x09
+    0x1c, 0x00, // 0x0a
+    0x10, 0x00, // 0x0b
+    0x1c, 0x00, // 0x0c
+    0x3c, 0x00, 0x3c, 0x00, 0x1c, 0x00, // 0x0d, 0x0e and 0x0f, reserved.
+];
 
 pub struct TrustAndGo<'a, PHY, D> {
     #[allow(dead_code)]
@@ -46,25 +83,48 @@ where
     fn try_from(atca: &'a mut AtCaClient<PHY, D>) -> Result<Self, Self::Error> {
         // Check if configuration zone is locked.
         if !atca.memory().is_locked(Zone::Config)? {
-            // ChipMode
-            // atca.memory().write_a()?;
-            // atca.memory().write_b()?;
-            // atca.memory().write_c()?;
-            // atca.memory().write_d()?;
+            // Slot config
+            TNG_TLS_SLOT_CONFIG_DATA
+                .chunks(Size::Word.len())
+                .enumerate()
+                .try_for_each(|(i, word)| {
+                    let index = TNG_TLS_SLOT_CONFIG_INDEX + i * Size::Word.len();
+                    let block = index / Size::Block.len();
+                    let offset = index % Size::Block.len() / Size::Word.len();
+                    atca.memory()
+                        .write_config(Size::Word, block as u8, offset as u8, word)
+                        .map(drop)
+                })?;
+
+            // Chip options
+            let block = TNG_TLS_CHIP_OPTIONS_INDEX / Size::Block.len();
+            let offset = TNG_TLS_CHIP_OPTIONS_INDEX % Size::Block.len() / Size::Word.len();
+            atca.memory().write_config(
+                Size::Word,
+                block as u8,
+                offset as u8,
+                &TNG_TLS_CHIP_OPTIONS,
+            )?;
+
+            // Key config
+            let block = TNG_TLS_KEY_CONFIG_INDEX / Size::Block.len();
+            let offset = TNG_TLS_KEY_CONFIG_INDEX % Size::Block.len() / Size::Word.len();
+            atca.memory().write_config(
+                Size::Block,
+                block as u8,
+                offset as u8,
+                &TNG_TLS_KEY_CONFIG_DATA,
+            )?;
+
+            // Lock config zone
             atca.memory().lock(Zone::Config)?;
         }
 
         // Check if data zone is locked.
         if !atca.memory().is_locked(Zone::Data)? {
-            // atca.memory().write_e()?;
-            // atca.memory().write_f()?;
-            // atca.memory().write_g()?;
-            // atca.memory().write_h()?;
             atca.memory().lock(Zone::Data)?;
         }
 
-        // Slot config
-        // Key config
         Ok(Self { atca })
     }
 }
@@ -77,4 +137,58 @@ where
     D: DelayUs<u32>,
 {
     // Any support for ECDSA-WITH-SHA256?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const TNG_TLS_COFIG_DATA: &[u8] = &[
+        // The first 13 bytes of config zone are a mixture of revision and serial number.
+        // 0x01, 0x23, 0x96, 0x94, 0x00, 0x00, 0x60, 0x02, 0x46, 0xf2, 0x02, 0x6c, 0xee, ..
+        0x01, // AES enable, default
+        0x41, // I2C enable, default
+        0x00, // Researved
+        0xc0, // I2C address, default
+        0x00, // Researved
+        0x00, // CountMatch, default
+        0x00, // ChipMode, default
+        // Block = 0, offset = 5
+        0x83, 0x20, // Slot 0x00, Primary private key
+        0x87, 0x20, // Slot 0x01, Internal sign private key
+        0x8f, 0x20, 0xc4, 0x8f, 0x8f, 0x8f, // Slot 02, 03 and 04, Secondary private keys 1-3
+        0x8f, 0x8f, // Slot 0x05, reserved.
+        0x9f, 0x8f, // Slot 0x06, I/O protection key
+        0xaf, 0x8f, // Slot 0x07, reserved.
+        0x00, 0x00, // Slot 0x08, General data
+        0x00, 0x00, // Slot 0x09, AES key
+        0x00, 0x00, // Slot 0x0a, Device compressed certificate
+        0x00, 0x00, // Slot 0x0b, Signer public key
+        0x00, 0x00, // Slot 0x0c, Signer compressed certificate
+        0x00, 0x00, 0x00, 0x00, 0xaf, 0x8f, // Slot 0x0d, 0x0e and 0x0f, reserved.
+        0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, // Counter 0, default
+        0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, // Counter 1, default
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, // misc.
+        0x55, // Data zone lock status
+        0x55, // Config zone lock status
+        0xff, 0xff, // Lock status of each slots
+        0x00, 0x00, // Chip options
+        0x00, 0x00, 0x00, 0x00, // X509format
+        // Block = 3, offset = 0, length = 32 (a single block)
+        0x33, 0x00, // Slot 0x00, Primary private key
+        0x33, 0x00, // Slot 0x01, Internal sign private key
+        0x33, 0x00, 0x1c, 0x00, 0x1c, 0x00, // Slot 02, 03 and 04, Secondary private keys 1-3
+        0x1c, 0x00, // Slot 0x05, reserved.
+        0x1c, 0x00, // Slot 0x06, I/O protection key
+        0x1c, 0x00, // Slot 0x07, reserved.
+        0x3c, 0x00, // Slot 0x08, General data
+        0x3c, 0x00, // Slot 0x09, AES key
+        0x3c, 0x00, // Slot 0x0a, Device compressed certificate
+        0x3c, 0x00, // Slot 0x0b, Signer public key
+        0x3c, 0x00, // Slot 0x0c, Signer compressed certificate
+        0x3c, 0x00, 0x3c, 0x00, 0x1c, 0x00, // Slot 0x0d, 0x0e and 0x0f, reserved.
+    ];
+
+    #[test]
+    fn config_data() {}
 }

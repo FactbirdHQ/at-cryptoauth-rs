@@ -35,7 +35,7 @@ pub struct Word {
 impl TryFrom<&[u8]> for Word {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
-        if buffer.len() != Size::Word as usize {
+        if buffer.len() != Size::Word.len() {
             return Err(ErrorKind::BadParam.into());
         }
 
@@ -67,7 +67,7 @@ pub struct Block {
 impl TryFrom<&[u8]> for Block {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
-        if buffer.len() != Size::Block as usize {
+        if buffer.len() != Size::Block.len() {
             return Err(ErrorKind::BadParam.into());
         }
 
@@ -100,7 +100,7 @@ pub struct Serial {
 impl TryFrom<&[u8]> for Serial {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
-        if buffer.len() != Size::Block as usize {
+        if buffer.len() != Size::Block.len() {
             return Err(ErrorKind::BadParam.into());
         }
         let mut value = [0; 9];
@@ -160,54 +160,71 @@ pub struct Nonce {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum OpCode {
+pub(crate) enum OpCode {
     /// CheckMac command op-code
+    #[allow(dead_code)]
     CheckMac = 0x28,
     /// DeriveKey command op-code
+    #[allow(dead_code)]
     DeriveKey = 0x1C,
     /// Info command op-code
     Info = 0x30,
     /// GenDig command op-code
     GenDig = 0x15,
     /// GenKey command op-code
+    #[allow(dead_code)]
     GenKey = 0x40,
     /// HMAC command op-code
+    #[allow(dead_code)]
     HMac = 0x11,
     /// Lock command op-code
     Lock = 0x17,
     /// MAC command op-code
+    #[allow(dead_code)]
     Mac = 0x08,
     /// Nonce command op-code
+    #[allow(dead_code)]
     Nonce = 0x16,
     /// Pause command op-code
+    #[allow(dead_code)]
     Pause = 0x01,
     /// PrivWrite command op-code
+    #[allow(dead_code)]
     PrivWrite = 0x46,
     /// Random command op-code
+    #[allow(dead_code)]
     Random = 0x1B,
     /// Read command op-code
     Read = 0x02,
     /// Sign command op-code
+    #[allow(dead_code)]
     Sign = 0x41,
     /// UpdateExtra command op-code
+    #[allow(dead_code)]
     UpdateExtra = 0x20,
-    /// GenKey command op-code
+    /// Verify command op-code
+    #[allow(dead_code)]
     Verify = 0x45,
     /// Write command op-code
     Write = 0x12,
     /// ECDH command op-code
+    #[allow(dead_code)]
     Ecdh = 0x43,
     /// Counter command op-code
+    #[allow(dead_code)]
     Counter = 0x24,
     /// SHA command op-code
     Sha = 0x47,
     /// AES command op-code
     Aes = 0x51,
     /// KDF command op-code
+    #[allow(dead_code)]
     Kdf = 0x56,
     /// Secure Boot command op-code
+    #[allow(dead_code)]
     SecureBoot = 0x80,
     /// Self test command op-code
+    #[allow(dead_code)]
     SelfTest = 0x77,
 }
 
@@ -324,12 +341,6 @@ impl<'a> NonceCmd<'a> {
     // TODO: Usage of Nonce, especially its correct timing is not clear. In
     // `test/api_atcab/atca_tests_aes.c`, AES encryption/decryption assumes
     // nonce value is loaded to TempKey in advance.
-    /*
-        // Load AES keys into TempKey
-        pub(crate) fn load(&mut self) -> Result<Packet, Error> {
-            nonce_load(NONCE_MODE_TARGET_TEMPKEY, g_aes_keys[0], 64);
-        }
-    */
 }
 
 impl<'a> Sha<'a> {

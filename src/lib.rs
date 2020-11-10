@@ -1,9 +1,9 @@
 #![no_std]
 pub mod client;
-pub mod clock_divider;
-pub mod command;
-pub mod datalink;
-pub mod error;
-pub mod memory;
-pub mod packet;
+mod clock_divider;
+mod command;
+mod datalink;
+mod error;
+mod memory;
+mod packet;
 pub mod tngtls;

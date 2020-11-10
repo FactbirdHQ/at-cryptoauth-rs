@@ -25,15 +25,17 @@ const EXEC_TIME_WRITE: [u32; 3] = [45, 45, 45];
 
 /// ChipMode clock divider {M0, M1, M2}
 #[derive(Clone, Copy, Debug)]
-pub enum ClockDivider {
+pub(crate) enum ClockDivider {
     Zero = 0,
+    #[allow(dead_code)]
     One = 1,
+    #[allow(dead_code)]
     Two = 2,
 }
 
 impl ClockDivider {
     /// Get the typical execution time for the given command.
-    pub fn execution_time(&self, opcode: &OpCode) -> Option<u32> {
+    pub(crate) fn execution_time(&self, opcode: &OpCode) -> Option<u32> {
         use OpCode::*;
         let index = *self as usize;
         match opcode {

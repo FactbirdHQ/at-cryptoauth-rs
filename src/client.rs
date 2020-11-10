@@ -13,7 +13,6 @@ use embedded_hal::blocking::i2c::{Read, Write};
 use heapless::{consts, Vec};
 
 pub const PUBLIC_KEY: usize = 0x40;
-const BUFFER_LEN: usize = 192;
 
 pub struct AtCaClient<PHY, D> {
     i2c: I2c<PHY, D>,
@@ -33,10 +32,11 @@ impl<PHY, D> AtCaClient<PHY, D> {
     }
 
     fn packet_builder(&mut self) -> PacketBuilder<'_> {
+        let capacity = self.buffer.capacity();
         self.buffer.clear();
-        self.buffer.resize(BUFFER_LEN, 0x00u8).unwrap_or_else(|()| {
-            unreachable!("Buffer of the exact length must have been allocated.")
-        });
+        self.buffer
+            .resize(capacity, 0x00u8)
+            .unwrap_or_else(|()| unreachable!("Input length equals to the current capacity."));
         PacketBuilder::new(&mut self.buffer)
     }
 
@@ -200,13 +200,19 @@ where
         self.atca.execute(packet).map(drop)
     }
 
-    pub fn write(&mut self) -> Result<(), Error> {
+    pub fn write_config(
+        &mut self,
+        size: Size,
+        block: u8,
+        offset: u8,
+        data: impl AsRef<[u8]>,
+    ) -> Result<(), Error> {
         let packet = command::Write::new(self.atca.packet_builder()).write(
             Zone::Config,
-            Size::Block,
-            0,
-            0,
-            &[],
+            size,
+            block,
+            offset,
+            data,
         )?;
         self.atca.execute(packet).map(drop)
     }
@@ -227,7 +233,7 @@ where
     D: DelayUs<u32>,
 {
     pub fn encrypt(&mut self, plaintext: &[u8], ciphertext: &mut [u8]) -> Result<(), Error> {
-        let block_size = Size::Block as usize;
+        let block_size = Size::Block.len();
         if plaintext.len() != ciphertext.len() {
             return Err(ErrorKind::BadParam.into());
         }
@@ -253,7 +259,7 @@ where
     }
 
     pub fn decrypt(&mut self, ciphertext: &[u8], plaintext: &mut [u8]) -> Result<(), Error> {
-        let block_size = Size::Block as usize;
+        let block_size = Size::Block.len();
         if ciphertext.len() != plaintext.len() {
             return Err(ErrorKind::BadParam.into());
         }
@@ -333,7 +339,7 @@ where
 
     pub fn digest(&mut self, data: &[u8]) -> Result<Digest, Error> {
         self.init()?;
-        data.chunks(Size::Block as usize)
+        data.chunks(Size::Block.len())
             .try_fold(self, |acc, chunk| acc.chain(chunk))
             .and_then(|acc| acc.finalize())
     }
