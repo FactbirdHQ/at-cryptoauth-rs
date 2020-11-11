@@ -67,8 +67,56 @@ const TNG_TLS_KEY_CONFIG_DATA: [u8; Size::Block as usize] = [
 ];
 
 pub struct TrustAndGo<'a, PHY, D> {
-    #[allow(dead_code)]
     atca: &'a mut AtCaClient<PHY, D>,
+}
+
+// Methods for preparing device state. Configuraion, random nonce and key creation and so on. 
+impl<'a, PHY, D> TrustAndGo<'a, PHY, D>
+where
+    PHY: Read + Write,
+    <PHY as Read>::Error: Debug,
+    <PHY as Write>::Error: Debug,
+    D: DelayUs<u32>,
+{
+    // Slot config
+    fn configure_slots(&mut self) -> Result<(), Error> {
+        TNG_TLS_SLOT_CONFIG_DATA
+            .chunks(Size::Word.len())
+            .enumerate()
+            .try_for_each(|(i, word)| {
+                let index = TNG_TLS_SLOT_CONFIG_INDEX + i * Size::Word.len();
+                let block = index / Size::Block.len();
+                let offset = index % Size::Block.len() / Size::Word.len();
+                self.atca
+                    .memory()
+                    .write_config(Size::Word, block as u8, offset as u8, word)
+                    .map(drop)
+            })
+    }
+
+    // Chip options
+    fn configure_chip_options(&mut self) -> Result<(), Error> {
+        let block = TNG_TLS_CHIP_OPTIONS_INDEX / Size::Block.len();
+        let offset = TNG_TLS_CHIP_OPTIONS_INDEX % Size::Block.len() / Size::Word.len();
+        self.atca.memory().write_config(
+            Size::Word,
+            block as u8,
+            offset as u8,
+            &TNG_TLS_CHIP_OPTIONS,
+        )
+    }
+
+    // Key config
+    fn configure_keys(&mut self) -> Result<(), Error> {
+        let block = TNG_TLS_KEY_CONFIG_INDEX / Size::Block.len();
+        let offset = TNG_TLS_KEY_CONFIG_INDEX % Size::Block.len() / Size::Word.len();
+        self.atca.memory().write_config(
+            Size::Block,
+            block as u8,
+            offset as u8,
+            &TNG_TLS_KEY_CONFIG_DATA,
+        )
+    }
 }
 
 // On creation of TNG object, enforce stateful configuration.
@@ -81,51 +129,22 @@ where
 {
     type Error = Error;
     fn try_from(atca: &'a mut AtCaClient<PHY, D>) -> Result<Self, Self::Error> {
+        let mut tng = Self { atca };
         // Check if configuration zone is locked.
-        if !atca.memory().is_locked(Zone::Config)? {
-            // Slot config
-            TNG_TLS_SLOT_CONFIG_DATA
-                .chunks(Size::Word.len())
-                .enumerate()
-                .try_for_each(|(i, word)| {
-                    let index = TNG_TLS_SLOT_CONFIG_INDEX + i * Size::Word.len();
-                    let block = index / Size::Block.len();
-                    let offset = index % Size::Block.len() / Size::Word.len();
-                    atca.memory()
-                        .write_config(Size::Word, block as u8, offset as u8, word)
-                        .map(drop)
-                })?;
-
-            // Chip options
-            let block = TNG_TLS_CHIP_OPTIONS_INDEX / Size::Block.len();
-            let offset = TNG_TLS_CHIP_OPTIONS_INDEX % Size::Block.len() / Size::Word.len();
-            atca.memory().write_config(
-                Size::Word,
-                block as u8,
-                offset as u8,
-                &TNG_TLS_CHIP_OPTIONS,
-            )?;
-
-            // Key config
-            let block = TNG_TLS_KEY_CONFIG_INDEX / Size::Block.len();
-            let offset = TNG_TLS_KEY_CONFIG_INDEX % Size::Block.len() / Size::Word.len();
-            atca.memory().write_config(
-                Size::Block,
-                block as u8,
-                offset as u8,
-                &TNG_TLS_KEY_CONFIG_DATA,
-            )?;
-
+        if !tng.atca.memory().is_locked(Zone::Config)? {
+            tng.configure_slots()?;
+            tng.configure_chip_options()?;
+            tng.configure_keys()?;
             // Lock config zone
-            atca.memory().lock(Zone::Config)?;
+            tng.atca.memory().lock(Zone::Config)?;
         }
 
         // Check if data zone is locked.
-        if !atca.memory().is_locked(Zone::Data)? {
-            atca.memory().lock(Zone::Data)?;
+        if !tng.atca.memory().is_locked(Zone::Data)? {
+            tng.atca.memory().lock(Zone::Data)?;
         }
 
-        Ok(Self { atca })
+        Ok(tng)
     }
 }
 
