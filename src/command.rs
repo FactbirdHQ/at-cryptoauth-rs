@@ -5,22 +5,6 @@ use super::memory::{Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder};
 use core::convert::TryFrom;
 
-/// AES mode: Encrypt
-const MODE_ENCRYPT: u8 = 0x00;
-/// AES mode: Decrypt
-const MODE_DECRYPT: u8 = 0x01;
-/// Initialization, does not accept a message
-const MODE_SHA256_START: u8 = 0x00;
-/// Add 64 bytes in the meesage to the SHA context
-const MODE_SHA256_UPDATE: u8 = 0x01;
-/// Complete the calculation and return the digest
-const MODE_SHA256_END: u8 = 0x02;
-/// Add 64 byte ECC public key in the slot to the SHA context
-#[allow(dead_code)]
-const MODE_SHA256_PUBLIC: u8 = 0x03;
-/// Info mode Revision
-const MODE_REVISION: u8 = 0x00;
-
 // Enumerate objects you may want from the device. Provide a bunch of
 // specialized return types since most of the commands return status code only.
 
@@ -296,13 +280,20 @@ impl<'a> GenKey<'a> {
 }
 
 impl<'a> Info<'a> {
+    /// Info mode Revision
+    const MODE_REVISION: u8 = 0x00;
+
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
     }
 
     /// Command execution will return a word containing the revision.
     pub(crate) fn revision(&mut self) -> Result<Packet, Error> {
-        let packet = self.0.opcode(OpCode::Info).mode(MODE_REVISION).build();
+        let packet = self
+            .0
+            .opcode(OpCode::Info)
+            .mode(Self::MODE_REVISION)
+            .build();
         Ok(packet)
     }
 }
@@ -333,6 +324,21 @@ impl<'a> Lock<'a> {
 
 /// Nonce
 impl<'a> NonceCmd<'a> {
+    const MODE_MASK: u8 = 0x03; // Nonce mode bits 2 to 7 are 0.
+    const MODE_SEED_UPDATE: u8 = 0x00; // Nonce mode: update seed
+    const MODE_NO_SEED_UPDATE: u8 = 0x01; // Nonce mode: do not update seed
+    const MODE_INVALID: u8 = 0x02; // Nonce mode 2 is invalid.
+    const MODE_PASSTHROUGH: u8 = 0x03; // Nonce mode: pass-through
+    const MODE_INPUT_LEN_MASK: u8 = 0x20; // Nonce mode: input size mask
+    const MODE_INPUT_LEN_32: u8 = 0x00; // Nonce mode: input size is 32 bytes
+    const MODE_INPUT_LEN_64: u8 = 0x20; // Nonce mode: input size is 64 bytes
+    const MODE_TARGET_MASK: u8 = 0xc0; // Nonce mode: target mask
+    const MODE_TARGET_TEMPKEY: u8 = 0x00; // Nonce mode: target is TempKey
+    const MODE_TARGET_MSGDIGBUF: u8 = 0x40; // Nonce mode: target is Message Digest Buffer
+    const MODE_TARGET_ALTKEYBUF: u8 = 0x80; // Nonce mode: target is Alternate Key Buffer
+
+    // num_in, 32 or 64 bytes.
+
     #[allow(dead_code)]
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
@@ -341,15 +347,45 @@ impl<'a> NonceCmd<'a> {
     // TODO: Usage of Nonce, especially its correct timing is not clear. In
     // `test/api_atcab/atca_tests_aes.c`, AES encryption/decryption assumes
     // nonce value is loaded to TempKey in advance.
+
+    fn nonce(&mut self) -> Self {
+        unimplemented!()
+    }
+    fn load(&mut self) -> Self {
+        unimplemented!()
+    }
+    fn rand(&mut self) -> Self {
+        unimplemented!()
+    }
+    fn challenge(&mut self) -> Self {
+        unimplemented!()
+    }
+    fn challenge_seed_update(&mut self) -> Self {
+        unimplemented!()
+    }
 }
 
 impl<'a> Sha<'a> {
+    /// Initialization, does not accept a message
+    const MODE_SHA256_START: u8 = 0x00;
+    /// Add 64 bytes in the meesage to the SHA context
+    const MODE_SHA256_UPDATE: u8 = 0x01;
+    /// Complete the calculation and return the digest
+    const MODE_SHA256_END: u8 = 0x02;
+    /// Add 64 byte ECC public key in the slot to the SHA context
+    #[allow(dead_code)]
+    const MODE_SHA256_PUBLIC: u8 = 0x03;
+
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
     }
 
     pub(crate) fn start(&mut self) -> Result<Packet, Error> {
-        let packet = self.0.opcode(OpCode::Sha).mode(MODE_SHA256_START).build();
+        let packet = self
+            .0
+            .opcode(OpCode::Sha)
+            .mode(Self::MODE_SHA256_START)
+            .build();
         Ok(packet)
     }
 
@@ -362,7 +398,7 @@ impl<'a> Sha<'a> {
         let packet = self
             .0
             .opcode(OpCode::Sha)
-            .mode(MODE_SHA256_UPDATE)
+            .mode(Self::MODE_SHA256_UPDATE)
             .pdu_data(data)
             .build();
         Ok(packet)
@@ -370,13 +406,22 @@ impl<'a> Sha<'a> {
 
     /// Command execution will return a digest of Block size.
     pub(crate) fn end(&mut self) -> Result<Packet, Error> {
-        let packet = self.0.opcode(OpCode::Sha).mode(MODE_SHA256_END).build();
+        let packet = self
+            .0
+            .opcode(OpCode::Sha)
+            .mode(Self::MODE_SHA256_END)
+            .build();
         Ok(packet)
     }
 }
 
 /// AES
 impl<'a> Aes<'a> {
+    /// AES mode: Encrypt
+    const MODE_ENCRYPT: u8 = 0x00;
+    /// AES mode: Decrypt
+    const MODE_DECRYPT: u8 = 0x01;
+
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
     }
@@ -396,7 +441,7 @@ impl<'a> Aes<'a> {
         let packet = self
             .0
             .opcode(OpCode::Aes)
-            .mode(MODE_ENCRYPT)
+            .mode(Self::MODE_ENCRYPT)
             .param2(slot as u16)
             .pdu_data(plaintext)
             .pdu_length(16)
@@ -419,10 +464,29 @@ impl<'a> Aes<'a> {
         let packet = self
             .0
             .opcode(OpCode::Aes)
-            .mode(MODE_DECRYPT)
+            .mode(Self::MODE_DECRYPT)
             .param2(slot as u16)
             .pdu_data(ciphertext)
             .pdu_length(16)
+            .build();
+        Ok(packet)
+    }
+}
+
+/// Random
+impl<'a> Random<'a> {
+    const MODE_SEED_UPDATE: u8 = 0x00;
+
+    #[allow(dead_code)]
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    pub(crate) fn random(&mut self) -> Result<Packet, Error> {
+        let packet = self
+            .0
+            .opcode(OpCode::Random)
+            .mode(Self::MODE_SEED_UPDATE)
             .build();
         Ok(packet)
     }
@@ -457,6 +521,11 @@ impl<'a> Read<'a> {
 
 /// Sign
 impl<'a> Sign<'a> {
+    // uint8_t nonce_target = NONCE_MODE_TARGET_TEMPKEY;
+    // uint8_t sign_source = SIGN_MODE_SOURCE_TEMPKEY;
+    const NONCE_MODE_TARGET_MSGDIGBUF: u8 = 0; // nonce_target
+    const SIGN_MODE_SOURCE_MSGDIGBUF: u8 = 0; // sign_source
+
     #[allow(dead_code)]
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
@@ -520,7 +589,7 @@ mod tests {
             .buffer(buf.as_ref());
         assert_eq!(packet[0x01], 0x07);
         assert_eq!(packet[0x02], OpCode::Sha as u8);
-        assert_eq!(packet[0x03], MODE_SHA256_START);
+        assert_eq!(packet[0x03], Sha::MODE_SHA256_START);
         assert_eq!(packet[0x04..0x06], [0x00, 0x00]);
     }
 }

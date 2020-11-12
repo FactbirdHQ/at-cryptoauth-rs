@@ -1,13 +1,12 @@
 use super::clock_divider::ClockDivider;
-use super::command::{self, Block, Digest, Info, Lock, Serial, Signature, Word};
+use super::command::{self, Block, Digest, Info, Lock, Random, Serial, Signature, Word};
 use super::datalink::I2c;
 use super::error::{Error, ErrorKind};
-use super::memory::{Size, Slot, Zone};
+use super::memory::{CertificateRepr, Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder, Response};
 use super::tngtls::TrustAndGo;
 use core::convert::{identity, TryFrom};
 use core::fmt::Debug;
-use core::slice::from_ref;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
 use heapless::{consts, Vec};
@@ -55,6 +54,10 @@ impl<PHY, D> AtCaClient<PHY, D> {
     pub fn sign(&mut self, key_id: Slot) -> Sign<'_, PHY, D> {
         Sign { atca: self, key_id }
     }
+
+    pub fn verify(&mut self, key_id: Slot) -> Verify<'_, PHY, D> {
+        Verify { atca: self, key_id }
+    }
 }
 
 impl<PHY, D> AtCaClient<PHY, D>
@@ -82,6 +85,17 @@ where
         let response = self.execute(packet)?;
         Word::try_from(response.as_ref())
     }
+
+    pub fn random(&mut self) -> Result<Block, Error> {
+        let packet = Random::new(self.packet_builder()).random()?;
+        let response = self.execute(packet)?;
+        Block::try_from(response.as_ref())
+    }
+
+    // Nonce load
+    pub fn nonce(&mut self) -> Result<(), Error> {
+        unimplemented!()
+    }
 }
 
 // Memory zones consist of config, data and OTP.
@@ -105,18 +119,11 @@ where
 
     pub fn pubkey(&mut self, key_id: Slot) -> Result<[u8; PUBLIC_KEY], Error> {
         let mut pubkey = [0x00u8; PUBLIC_KEY];
-        (0..=2u8)
-            .scan(0, |offset, i| {
-                // TODO: Elaborate creation of ranges.
-                let ranges = match i {
-                    0 => from_ref(&(0x04..0x20)),
-                    1 => &[0x00..0x04, 0x08..0x20],
-                    2 => from_ref(&(0x00..0x08)),
-                    _ => unreachable!("The range i stops at 2."),
-                };
-
+        CertificateRepr::new()
+            .enumerate()
+            .scan(0, |offset, (i, ranges)| {
                 let result = command::Read::new(self.atca.packet_builder())
-                    .slot(key_id, i)
+                    .slot(key_id, i as u8)
                     .and_then(|packet| {
                         let response = self.atca.execute(packet)?;
                         for range in ranges {
@@ -134,18 +141,11 @@ where
 
     pub fn write_pubkey(&mut self, key_id: Slot, pubkey: impl AsRef<[u8]>) -> Result<(), Error> {
         let mut data = Block::default();
-        (0..=2u8)
-            .scan(0, |offset, i| {
+        CertificateRepr::new()
+            .enumerate()
+            .scan(0, |offset, (i, ranges)| {
                 // Initialize block sized buffer
                 data.as_mut().iter_mut().for_each(|value| *value = 0);
-
-                // TODO: Elaborate creation of ranges.
-                let ranges = match i {
-                    0 => from_ref(&(0x04..0x20)),
-                    1 => &[0x00..0x04, 0x08..0x20],
-                    2 => from_ref(&(0x00..0x08)),
-                    _ => unreachable!("The range i stops at 2."),
-                };
 
                 for range in ranges {
                     let src = *offset..*offset + range.len();
@@ -154,7 +154,7 @@ where
                 }
 
                 let result = command::Write::new(self.atca.packet_builder())
-                    .slot(key_id, i, &data)
+                    .slot(key_id, i as u8, &data)
                     .and_then(|packet| self.atca.execute(packet).map(drop));
 
                 Some(result)
@@ -360,6 +360,26 @@ where
     D: DelayUs<u32>,
 {
     pub fn sign_digest(&mut self, digest: impl AsRef<[u8]>) -> Result<Signature, Error> {
+        let _ = digest;
+        let _ = self.atca;
+        let _ = self.key_id;
+        Err(ErrorKind::BadParam.into())
+    }
+}
+
+pub struct Verify<'a, PHY, D> {
+    atca: &'a mut AtCaClient<PHY, D>,
+    key_id: Slot,
+}
+
+impl<'a, PHY, D> Verify<'a, PHY, D>
+where
+    PHY: Read + Write,
+    <PHY as Read>::Error: Debug,
+    <PHY as Write>::Error: Debug,
+    D: DelayUs<u32>,
+{
+    pub fn verify(&mut self, digest: impl AsRef<[u8]>) -> Result<Signature, Error> {
         let _ = digest;
         let _ = self.atca;
         let _ = self.key_id;
