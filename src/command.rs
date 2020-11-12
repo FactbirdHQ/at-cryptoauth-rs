@@ -4,6 +4,7 @@ use super::error::{Error, ErrorKind};
 use super::memory::{Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder};
 use core::convert::TryFrom;
+use signature;
 
 // Enumerate objects you may want from the device. Provide a bunch of
 // specialized return types since most of the commands return status code only.
@@ -104,7 +105,24 @@ impl AsRef<[u8]> for Serial {
 /// S integers in big-endian format. 64 bytes for P256 curve.
 #[derive(Clone, Copy, Debug)]
 pub struct Signature {
-    value: [u8; 64],
+    value: [u8; 0x40],
+}
+
+impl AsRef<[u8]> for Signature {
+    fn as_ref(&self) -> &[u8] {
+        &self.value
+    }
+}
+
+impl signature::Signature for Signature {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, signature::Error> {
+        if bytes.len() != 0x40 {
+            return Err(signature::Error::new());
+        }
+        let mut value = [0; 0x40];
+        value[..].as_mut().copy_from_slice(bytes);
+        Ok(Self { value })
+    }
 }
 
 // A digest yielded from cryptographic hash functions.

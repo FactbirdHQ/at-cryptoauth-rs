@@ -404,8 +404,8 @@ where
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    pub fn sign_digest(&mut self, digest: impl AsRef<[u8]>) -> Result<Signature, Error> {
-        let _ = digest;
+    pub fn sign_digest(&mut self, msg: &[u8]) -> Result<Signature, Error> {
+        let _ = msg;
         let _ = self.atca;
         let _ = self.key_id;
         Err(ErrorKind::BadParam.into())

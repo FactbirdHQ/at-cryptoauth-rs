@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     info!("Chip options 0x{:04x}", chip_options);
 
     // Key configurations
-    for key_id in KEY_IDS {
+    for key_id in (0x00..0x10).map()// KEY_IDS {
         let permission = atca
             .memory()
             .permission(*key_id)

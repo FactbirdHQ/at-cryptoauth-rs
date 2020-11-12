@@ -6,7 +6,7 @@
 // Signer public key from signer certificate. 6. ECDH/KDF key slot capable of
 // being used with AES keys and commands. 7. X.509 Compressed Certificate
 // Storage.
-use super::client::{AtCaClient, Memory, Sign, Verify};
+use super::client::{AtCaClient, Memory, Sha, Sign, Verify};
 use super::command::Signature;
 use super::error::Error;
 use super::memory::{Size, Slot, Zone};
@@ -15,6 +15,7 @@ use core::convert::TryFrom;
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
+use signature;
 
 pub const AUTH_PRIVATE_KEY: Slot = Slot::PrivateKey00;
 pub const SIGN_PRIVATE_KEY: Slot = Slot::PrivateKey01;
@@ -55,15 +56,18 @@ impl<'a, PHY, D> From<Sign<'a, PHY, D>> for Signer<'a, PHY, D> {
     }
 }
 
-impl<'a, PHY, D> Signer<'a, PHY, D>
+impl<'a, PHY, D> signature::Signer<Signature> for Signer<'a, PHY, D>
 where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    pub fn sign(&self, digest: impl AsRef<[u8]>) -> Result<Signature, Error> {
-        self.0.borrow_mut().sign_digest(digest)
+    fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
+        self.0
+            .borrow_mut()
+            .sign_digest(msg)
+            .map_err(|_| signature::Error::new())
     }
 }
 
