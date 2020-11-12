@@ -12,9 +12,6 @@ heapless = { version = "^0.5", features = ["serde"] }
 version = "0.2.3"
 features = ["unproven"]
 
-[[example]]
-name = "stm32l4xx_atecc608"
-
 [dev-dependencies]
 cortex-m = "0.6.3"
 cortex-m-rt = "0.6.12"
@@ -27,4 +24,4 @@ git = "https://github.com/stm32-rs/stm32l4xx-hal.git"
 features = ["rt", "stm32l4x5"]
 
 [[example]]
-name = "raspberrypi_atecc608"
+name = "stm32l4xx_atecc608"

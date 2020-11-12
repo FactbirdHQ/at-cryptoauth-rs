@@ -12,11 +12,18 @@ const WAKE_RESPONSE_EXPECTED: &[u8] = &[0x04, 0x11, 0x33, 0x43];
 const WAKE_SELFTEST_FAILED: &[u8] = &[0x04, 0x07, 0xC4, 0x40];
 
 /// Default I2C address of ATECC608
-const ADDRESS: u8 = 0xC0 >> 1;
+const ADDRESS: u8 = 0xc0 >> 1;
 /// Default time in us that takes for ATECC608 device to wake up.
 const DELAY_US: u32 = 1500;
-/// By default, wake up sequence is repeated up to 20 times until it succeeds.
+
+// By default, wake up sequence is repeated up to 20 times until it succeeds.
+// Multipy by 2, otherwise you see RxFail on wake up. It happens when you try to
+// write a word to the config zone on Raspberry PI's I2C. This behaviour might
+// be specific to linux HAL.
+#[cfg(target_os = "none")]
 const RETRY: usize = 20;
+#[cfg(not(target_os = "none"))]
+const RETRY: usize = 20 * 2;
 
 /// So-called "word address".
 #[derive(Clone, Copy, Debug, PartialEq)]

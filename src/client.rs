@@ -103,6 +103,12 @@ pub struct Memory<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
 }
 
+impl<'a, PHY, D> Memory<'a, PHY, D> {
+    pub(crate) const SLOT_CONFIG_INDEX: usize = 20;
+    pub(crate) const CHIP_OPTIONS_INDEX: usize = 90;
+    pub(crate) const KEY_CONFIG_INDEX: usize = 96;
+}
+
 impl<'a, PHY, D> Memory<'a, PHY, D>
 where
     PHY: Read + Write,
@@ -198,6 +204,45 @@ where
     pub fn lock(&mut self, zone: Zone) -> Result<(), Error> {
         let packet = Lock::new(self.atca.packet_builder()).zone(zone)?;
         self.atca.execute(packet).map(drop)
+    }
+
+    pub fn chip_options(&mut self) -> Result<u16, Error> {
+        let (block, offset, pos) = Zone::locate_index(Self::CHIP_OPTIONS_INDEX);
+        self.read_config(Size::Word, block, offset).map(|resp| {
+            resp.as_ref()[pos as usize] as u16 | (resp.as_ref()[pos as usize + 1] as u16) << 8
+        })
+    }
+
+    pub fn permission(&mut self, slot: Slot) -> Result<u16, Error> {
+        let index = Self::SLOT_CONFIG_INDEX + (slot as usize * 2);
+        let (block, offset, pos) = Zone::locate_index(index);
+        self.read_config(Size::Word, block, offset).map(|resp| {
+            resp.as_ref()[pos as usize] as u16 | (resp.as_ref()[pos as usize + 1] as u16) << 8
+        })
+    }
+
+    pub fn key_type(&mut self, slot: Slot) -> Result<u16, Error> {
+        let index = Self::KEY_CONFIG_INDEX + (slot as usize * 2);
+        let (block, offset, pos) = Zone::locate_index(index);
+        self.read_config(Size::Word, block, offset).map(|resp| {
+            resp.as_ref()[pos as usize] as u16 | (resp.as_ref()[pos as usize + 1] as u16) << 8
+        })
+    }
+
+    // TODO: Testing purpose only.
+    pub fn read_config(
+        &mut self,
+        size: Size,
+        block: u8,
+        offset: u8,
+    ) -> Result<Response<'_>, Error> {
+        let packet = command::Read::new(self.atca.packet_builder()).read(
+            Zone::Config,
+            size,
+            block,
+            offset,
+        )?;
+        self.atca.execute(packet)
     }
 
     pub fn write_config(

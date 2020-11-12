@@ -4,6 +4,6 @@ mod clock_divider;
 mod command;
 mod datalink;
 mod error;
-mod memory;
+pub mod memory;
 mod packet;
 pub mod tngtls;

@@ -29,10 +29,11 @@ pub enum Zone {
 
 impl Zone {
     // A helper method to translate a global index into block and offset.
-    pub(crate) fn locate_index(index: usize) -> (u8, u8) {
+    pub(crate) fn locate_index(index: usize) -> (u8, u8, u8) {
         let block = index / Size::Block.len();
         let offset = index % Size::Block.len() / Size::Word.len();
-        (block as u8, offset as u8)
+        let position = index % Size::Word.len();
+        (block as u8, offset as u8, position as u8)
     }
 
     pub(crate) fn get_slot_addr(&self, slot: Slot, block: u8) -> Result<u16, Error> {
@@ -125,11 +126,28 @@ impl Iterator for CertificateRepr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::Memory;
     use core::convert::identity;
     use core::iter::repeat;
     use heapless::{consts, Vec};
     use Slot::*;
     use Zone::*;
+
+    #[test]
+    fn locate_index() {
+        assert_eq!(
+            (0, 5, 0),
+            Zone::locate_index(Memory::<(), ()>::SLOT_CONFIG_INDEX)
+        );
+        assert_eq!(
+            (2, 6, 2),
+            Zone::locate_index(Memory::<(), ()>::CHIP_OPTIONS_INDEX)
+        );
+        assert_eq!(
+            (3, 0, 0),
+            Zone::locate_index(Memory::<(), ()>::KEY_CONFIG_INDEX)
+        );
+    }
 
     #[test]
     fn get_slot_addr() {

@@ -133,8 +133,9 @@ impl Packet {
 }
 
 // Is it possible to classify the response into [] | [u8; WORD] | [u8; BLOCK]?
+// TODO: Testing purpose only. Should not be public.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Response<'a> {
+pub struct Response<'a> {
     // status: u8, necessary?
     pdu: &'a [u8],
 }

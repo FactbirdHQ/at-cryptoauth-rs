@@ -6,7 +6,7 @@
 // Signer public key from signer certificate. 6. ECDH/KDF key slot capable of
 // being used with AES keys and commands. 7. X.509 Compressed Certificate
 // Storage.
-use super::client::{AtCaClient, Sign, Verify};
+use super::client::{AtCaClient, Memory, Sign, Verify};
 use super::command::Signature;
 use super::error::Error;
 use super::memory::{Size, Slot, Zone};
@@ -87,6 +87,13 @@ where
     }
 }
 
+// TODO: Testing purpose only.
+impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
+    pub fn new(atca: &'a mut AtCaClient<PHY, D>) -> Self {
+        Self { atca }
+    }
+}
+
 // Methods for preparing device state. Configuraion, random nonce and key creation and so on.
 impl<'a, PHY, D> TrustAndGo<'a, PHY, D>
 where
@@ -96,7 +103,7 @@ where
     D: DelayUs<u32>,
 {
     // Miscellaneous device states.
-    const TNG_TLS_SLOT_CONFIG_INDEX: usize = 20;
+    // const TNG_TLS_SLOT_CONFIG_INDEX: usize = 20;
     const TNG_TLS_SLOT_CONFIG_DATA: [u8; Size::Block as usize] = [
         // Index 20..=51, block = 0, offset = 5
         0x85, 0x00, // Slot 0x00, Primary private key
@@ -113,13 +120,13 @@ where
         0x00, 0x00, 0x00, 0x00, 0xaf, 0x8f, // Slot 0x0d, 0x0e and 0x0f, reserved.
     ];
 
-    const TNG_TLS_CHIP_OPTIONS_INDEX: usize = 88;
+    // const TNG_TLS_CHIP_OPTIONS_INDEX: usize = 88;
     const TNG_TLS_CHIP_OPTIONS: [u8; Size::Word as usize] = [
         // Index 88..=91, block = 2, offset = 6
         0xff, 0xff, 0x60, 0x0e,
     ];
 
-    const TNG_TLS_KEY_CONFIG_INDEX: usize = 96;
+    // const TNG_TLS_KEY_CONFIG_INDEX: usize = 96;
     const TNG_TLS_KEY_CONFIG_DATA: [u8; Size::Block as usize] = [
         // Index 96..=127, block = 3, offset = 0
         0x53, 0x00, // 0x00
@@ -137,13 +144,13 @@ where
     ];
 
     // Slot config
-    fn configure_slots(&mut self) -> Result<(), Error> {
+    pub fn configure_permissions(&mut self) -> Result<(), Error> {
         Self::TNG_TLS_SLOT_CONFIG_DATA
             .chunks(Size::Word.len())
             .enumerate()
             .try_for_each(|(i, word)| {
-                let index = Self::TNG_TLS_SLOT_CONFIG_INDEX + i * Size::Word.len();
-                let (block, offset) = Zone::locate_index(index);
+                let index = Memory::<PHY, D>::SLOT_CONFIG_INDEX + i * Size::Word.len();
+                let (block, offset, _) = Zone::locate_index(index);
                 self.atca
                     .memory()
                     .write_config(Size::Word, block, offset, word)
@@ -152,16 +159,16 @@ where
     }
 
     // Chip options
-    fn configure_chip_options(&mut self) -> Result<(), Error> {
-        let (block, offset) = Zone::locate_index(Self::TNG_TLS_CHIP_OPTIONS_INDEX);
+    pub fn configure_chip_options(&mut self) -> Result<(), Error> {
+        let (block, offset, _) = Zone::locate_index(Memory::<PHY, D>::CHIP_OPTIONS_INDEX);
         self.atca
             .memory()
             .write_config(Size::Word, block, offset, &Self::TNG_TLS_CHIP_OPTIONS)
     }
 
     // Key config
-    fn configure_keys(&mut self) -> Result<(), Error> {
-        let (block, offset) = Zone::locate_index(Self::TNG_TLS_KEY_CONFIG_INDEX);
+    pub fn configure_key_types(&mut self) -> Result<(), Error> {
+        let (block, offset, _) = Zone::locate_index(Memory::<PHY, D>::KEY_CONFIG_INDEX);
         self.atca
             .memory()
             .write_config(Size::Block, block, offset, &Self::TNG_TLS_KEY_CONFIG_DATA)
@@ -181,9 +188,9 @@ where
         let mut tng = Self { atca };
         // Check if configuration zone is locked.
         if !tng.atca.memory().is_locked(Zone::Config)? {
-            tng.configure_slots()?;
+            tng.configure_permissions()?;
             tng.configure_chip_options()?;
-            tng.configure_keys()?;
+            tng.configure_key_types()?;
             // Lock config zone
             tng.atca.memory().lock(Zone::Config)?;
         }
