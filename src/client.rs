@@ -185,8 +185,12 @@ where
         let size = Size::Word;
         let block = 2;
         let word_offset = 5;
-        let packet =
-            command::Read::new(self.atca.packet_builder()).read(zone, size, block, word_offset)?;
+        let packet = command::Read::new(self.atca.packet_builder()).read(
+            Zone::Config,
+            size,
+            block,
+            word_offset,
+        )?;
         let response = self.atca.execute(packet)?;
         let word = Word::try_from(response.as_ref())?;
         match zone {
@@ -209,7 +213,7 @@ where
     pub fn chip_options(&mut self) -> Result<u16, Error> {
         let (block, offset, pos) = Zone::locate_index(Self::CHIP_OPTIONS_INDEX);
         self.read_config(Size::Word, block, offset).map(|resp| {
-            resp.as_ref()[pos as usize] as u16 | (resp.as_ref()[pos as usize + 1] as u16) << 8
+            u16::from_le_bytes([resp.as_ref()[pos as usize], resp.as_ref()[pos as usize + 1]])
         })
     }
 
@@ -217,7 +221,7 @@ where
         let index = Self::SLOT_CONFIG_INDEX + (slot as usize * 2);
         let (block, offset, pos) = Zone::locate_index(index);
         self.read_config(Size::Word, block, offset).map(|resp| {
-            resp.as_ref()[pos as usize] as u16 | (resp.as_ref()[pos as usize + 1] as u16) << 8
+            u16::from_le_bytes([resp.as_ref()[pos as usize], resp.as_ref()[pos as usize + 1]])
         })
     }
 
@@ -225,7 +229,7 @@ where
         let index = Self::KEY_CONFIG_INDEX + (slot as usize * 2);
         let (block, offset, pos) = Zone::locate_index(index);
         self.read_config(Size::Word, block, offset).map(|resp| {
-            resp.as_ref()[pos as usize] as u16 | (resp.as_ref()[pos as usize + 1] as u16) << 8
+            u16::from_le_bytes([resp.as_ref()[pos as usize], resp.as_ref()[pos as usize + 1]])
         })
     }
 

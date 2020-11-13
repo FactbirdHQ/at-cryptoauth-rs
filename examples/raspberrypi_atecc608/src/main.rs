@@ -2,34 +2,15 @@
 // $ scp target/armv7-unknown-linux-gnueabihf/debug/raspberrypi_atecc608 pi@<IP addr>:/home/pi/raspberrypi_atecc608
 // $ ssh pi@<IP addr> "RUST_LOG=info ./raspberrypi_atecc608"
 use at_cryptoauth::client::AtCaClient;
-use at_cryptoauth::memory::{Size, Slot};
+use at_cryptoauth::memory::{Size, Slot, Zone};
 use at_cryptoauth::tngtls::TrustAndGo;
 use linux_embedded_hal::Delay;
 use linux_embedded_hal::I2cdev;
 use log::info;
 use std::error::Error;
-use Slot::*;
 
 const I2C_PATH: &str = "/dev/i2c-1";
 const ATECC608_ADDR: u16 = 0xc0 >> 1;
-const KEY_IDS: &[Slot] = &[
-    PrivateKey00,
-    PrivateKey01,
-    PrivateKey02,
-    PrivateKey03,
-    PrivateKey04,
-    PrivateKey05,
-    PrivateKey06,
-    PrivateKey07,
-    Data08,
-    Certificate09,
-    Certificate0a,
-    Certificate0b,
-    Certificate0c,
-    Certificate0d,
-    Certificate0e,
-    Certificate0f,
-];
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -57,20 +38,38 @@ fn main() -> Result<(), Box<dyn Error>> {
         .read_config(Size::Word, 2, 5)
         .map(|response| info!("Lock bytes {:02x?}", response.as_ref()))
         .map_err(|e| format!("{}", e))?;
+    atca.memory()
+        .is_locked(Zone::Config)
+        .map(|response| info!("Config zone is locked: {}", response))
+        .map_err(|e| format!("{}", e))?;
+    atca.memory()
+        .is_locked(Zone::Data)
+        .map(|response| info!("Data zone is locked: {}", response))
+        .map_err(|e| format!("{}", e))?;
+    for key_id in Slot::keys() {
+        atca.memory()
+            .is_slot_locked(key_id)
+            .map(|response| {
+                if response {
+                    info!("{:?} is locked: {}", key_id, response)
+                }
+            })
+            .map_err(|e| format!("{}", e))?;
+    }
 
     // Chip options
     let chip_options = atca.memory().chip_options().map_err(|e| format!("{}", e))?;
     info!("Chip options 0x{:04x}", chip_options);
 
     // Key configurations
-    for key_id in (0x00..0x10).map()// KEY_IDS {
+    for key_id in Slot::keys() {
         let permission = atca
             .memory()
-            .permission(*key_id)
+            .permission(key_id)
             .map_err(|e| format!("{}", e))?;
         let key_type = atca
             .memory()
-            .key_type(*key_id)
+            .key_type(key_id)
             .map_err(|e| format!("{}", e))?;
         info!(
             "{:?}, key type 0x{:04x}, permission 0x{:04x}",
@@ -78,9 +77,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    let mut tng = TrustAndGo::new(&mut atca);
-    tng.configure_chip_options().map_err(|e| format!("{}", e))?;
-    tng.configure_permissions().map_err(|e| format!("{}", e))?;
-    tng.configure_key_types().map_err(|e| format!("{}", e))?;
+    // Which key slot can you read?
+    for key_id in Slot::keys() {
+        if key_id.is_certificate() {
+            let result = atca.memory().pubkey(key_id);
+            info!("{:?}, {:?}", key_id, result);
+        }
+    }
+
+    // let mut tng = TrustAndGo::new(&mut atca);
+    // tng.configure_chip_options().map_err(|e| format!("{}", e))?;
+    // tng.configure_permissions().map_err(|e| format!("{}", e))?;
+    // tng.configure_key_types().map_err(|e| format!("{}", e))?;
     Ok(())
 }

@@ -15,7 +15,6 @@ use core::convert::TryFrom;
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
-use signature;
 
 pub const AUTH_PRIVATE_KEY: Slot = Slot::PrivateKey00;
 pub const SIGN_PRIVATE_KEY: Slot = Slot::PrivateKey01;
@@ -66,6 +65,7 @@ where
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
         self.0
             .borrow_mut()
+            // TODO: You should create a digest for the message first.
             .sign_digest(msg)
             .map_err(|_| signature::Error::new())
     }
@@ -82,30 +82,17 @@ where
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    fn signer(&mut self) -> Signer<'_, PHY, D> {
+    pub fn signer(&mut self) -> Signer<'_, PHY, D> {
         self.atca.sign(SIGN_PRIVATE_KEY).into()
     }
 
-    fn verifier(&mut self) -> Verifier<'_, PHY, D> {
+    pub fn verifier(&mut self) -> Verifier<'_, PHY, D> {
         self.atca.verify(SIGN_PRIVATE_KEY).into()
     }
 }
 
 // TODO: Testing purpose only.
 impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
-    pub fn new(atca: &'a mut AtCaClient<PHY, D>) -> Self {
-        Self { atca }
-    }
-}
-
-// Methods for preparing device state. Configuraion, random nonce and key creation and so on.
-impl<'a, PHY, D> TrustAndGo<'a, PHY, D>
-where
-    PHY: Read + Write,
-    <PHY as Read>::Error: Debug,
-    <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
-{
     // Miscellaneous device states.
     // const TNG_TLS_SLOT_CONFIG_INDEX: usize = 20;
     const TNG_TLS_SLOT_CONFIG_DATA: [u8; Size::Block as usize] = [
@@ -147,6 +134,19 @@ where
         0x3c, 0x00, 0x3c, 0x00, 0x1c, 0x00, // 0x0d, 0x0e and 0x0f, reserved.
     ];
 
+    pub fn new(atca: &'a mut AtCaClient<PHY, D>) -> Self {
+        Self { atca }
+    }
+}
+
+// Methods for preparing device state. Configuraion, random nonce and key creation and so on.
+impl<'a, PHY, D> TrustAndGo<'a, PHY, D>
+where
+    PHY: Read + Write,
+    <PHY as Read>::Error: Debug,
+    <PHY as Write>::Error: Debug,
+    D: DelayUs<u32>,
+{
     // Slot config
     pub fn configure_permissions(&mut self) -> Result<(), Error> {
         Self::TNG_TLS_SLOT_CONFIG_DATA
@@ -210,6 +210,180 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::command::OpCode;
+    use core::ops::Deref;
+    use heapless::consts::U5;
+    use heapless::Vec;
+    use OpCode::*;
+    const KEY_TYPE_P256: u16 = 0x04; // P256 NIST ECC key
+    const KEY_TYPE_AES: u16 = 0x06; // AES-128 Key
+    const KEY_TYPE_SHA: u16 = 0x07; // SHA key or other data
+
+    struct Provision {
+        key_id: Slot,
+        permission: u16,
+        key_config: u16,
+    }
+
+    impl Provision {
+        fn new(key_id: Slot) -> Self {
+            let permission = permission(key_id);
+            let key_config = key_config(key_id);
+            Self {
+                key_id,
+                permission,
+                key_config,
+            }
+        }
+
+        fn key_type(&self) -> u16 {
+            (self.key_config >> 2) & 0x07
+        }
+
+        fn read_key(&self) -> u16 {
+            self.permission & 0x0f
+        }
+
+        fn encrypt_read(&self) -> bool {
+            (self.permission >> 6) & 0x01 != 0x00
+        }
+
+        fn is_secret(&self) -> bool {
+            (self.permission >> 7) & 0x01 != 0x00
+        }
+
+        fn write_config(&self) -> u16 {
+            (self.permission >> 12) & 0x0f
+        }
+
+        fn read_permission(&self) -> &str {
+            match (self.is_secret(), self.encrypt_read()) {
+                (false, false) => "Clear text",
+                (true, false) => "Never",
+                (true, true) => "Encrypted",
+                _ => panic!("Prohibited"),
+            }
+        }
+
+        fn write_permission(&self) -> &str {
+            match self.write_config() {
+                0x00 => "Clear text",
+                0x01 => "PubInvalid",
+                x if (x >> 1) == 0x01 => "Never",
+                x if (x >> 2) == 0x02 => "Never",
+                x if (x >> 2) & 0x01 == 0x01 => "Encrypted",
+                _ => panic!("Prohibited"),
+            }
+        }
+
+        // Random nonce
+        fn require_nonce(&self) -> bool {
+            (self.key_config >> 6) & 0x01 != 0x00
+        }
+
+        // Commands that returns its output to the slot.
+        fn creation_commands(&self) -> Vec<OpCode, U5> {
+            let mut commands = Vec::<OpCode, U5>::new();
+            if self.key_id.is_private_key() && self.key_type() == KEY_TYPE_P256 && self.is_secret()
+            {
+                if (self.write_config() >> 1) & 0x01 == 0x01 {
+                    commands.push(GenKey).unwrap();
+                    commands.push(DeriveKey).unwrap();
+                }
+                if (self.write_config() >> 2) & 0x01 == 0x01 {
+                    commands.push(PrivWrite).unwrap();
+                }
+            }
+            commands
+        }
+
+        // Commands that takes the slot as an intput.
+        #[allow(dead_code)]
+        fn operation_commands(&self) -> &[OpCode] {
+            let mut commands = Vec::<OpCode, U5>::new();
+            if self.key_id.is_private_key() {
+                if (self.read_key() >> 2) & 0x01 == 0x01 {
+                    commands.push(Ecdh).unwrap();
+                }
+                if self.is_secret() && self.key_type() == KEY_TYPE_P256 {
+                    commands.push(Sign).unwrap();
+                }
+                unimplemented!()
+            } else {
+                unimplemented!()
+            }
+        }
+    }
+
+    fn permission(key_id: Slot) -> u16 {
+        let data = &TrustAndGo::<(), ()>::TNG_TLS_SLOT_CONFIG_DATA;
+        let index = key_id as usize * 2;
+        u16::from_le_bytes([data[index], data[index + 1]])
+    }
+
+    fn key_config(key_id: Slot) -> u16 {
+        let data = &TrustAndGo::<(), ()>::TNG_TLS_KEY_CONFIG_DATA;
+        let index = key_id as usize * 2;
+        u16::from_le_bytes([data[index], data[index + 1]])
+    }
+
+    // ECC private keys can never be written with the Write and/or DeriveKey
+    // commands. Instead, GenKey and PrivWrite can be used to modify these
+    // slots.
     #[test]
-    fn config_data() {}
+    fn provision() {
+        let auth_priv = Provision::new(AUTH_PRIVATE_KEY);
+        assert_eq!(KEY_TYPE_P256, auth_priv.key_type());
+        assert_eq!(0x05, auth_priv.read_key());
+        assert_eq!("Clear text", auth_priv.write_permission());
+        assert_eq!(true, auth_priv.require_nonce());
+        assert_eq!(0, auth_priv.creation_commands().len());
+
+        let sign_priv = Provision::new(SIGN_PRIVATE_KEY);
+        assert_eq!(KEY_TYPE_P256, sign_priv.key_type());
+        assert_eq!(0x02, sign_priv.read_key());
+        assert_eq!("Clear text", sign_priv.write_permission());
+        assert_eq!(true, sign_priv.require_nonce());
+        assert_eq!(0, sign_priv.creation_commands().len());
+
+        for key_id in [USER_PRIVATE_KEY1, USER_PRIVATE_KEY2, USER_PRIVATE_KEY3].iter() {
+            let user_priv = Provision::new(*key_id);
+            assert_eq!(KEY_TYPE_P256, user_priv.key_type());
+            assert_eq!(0x05, user_priv.read_key());
+            assert_eq!("Never", user_priv.write_permission());
+            assert_eq!(true, user_priv.require_nonce());
+            assert_eq!(&[GenKey, DeriveKey], user_priv.creation_commands().deref());
+        }
+
+        let io_protect = Provision::new(IO_PROTECTION_KEY);
+        assert_eq!(KEY_TYPE_SHA, io_protect.key_type());
+        assert_eq!("Clear text", io_protect.write_permission());
+        assert_eq!(true, io_protect.require_nonce());
+        assert_eq!(0, io_protect.creation_commands().len());
+
+        let aes_key = Provision::new(AES_KEY);
+        assert_eq!(KEY_TYPE_AES, aes_key.key_type());
+        assert_eq!("Never", aes_key.read_permission());
+        assert_eq!("Clear text", aes_key.write_permission());
+        assert_eq!(0x00, aes_key.write_config());
+
+        let device_cert = Provision::new(DEVICE_CERTIFICATE);
+        assert_eq!(KEY_TYPE_SHA, device_cert.key_type());
+        assert_eq!("Clear text", device_cert.read_permission());
+        assert_eq!("Never", device_cert.write_permission());
+        assert_eq!(0x08, device_cert.write_config());
+
+        let signer_pub = Provision::new(SIGNER_PUBLIC_KEY);
+        assert_eq!(KEY_TYPE_P256, signer_pub.key_type());
+        assert_eq!("Clear text", signer_pub.read_permission());
+        assert_eq!("Never", signer_pub.write_permission());
+        assert_eq!(0x08, signer_pub.write_config());
+
+        let signer_cert = Provision::new(SIGNER_CERTIFICATE);
+        assert_eq!(KEY_TYPE_SHA, signer_cert.key_type());
+        assert_eq!("Clear text", signer_cert.read_permission());
+        assert_eq!("Never", signer_cert.write_permission());
+        assert_eq!(0x08, signer_cert.write_config());
+    }
 }

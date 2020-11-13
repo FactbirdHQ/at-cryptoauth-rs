@@ -68,7 +68,7 @@ where
         self.delay.delay_us(exec_time.unwrap_or(1));
         let response_buffer = self.receive(buffer)?;
         self.idle()?;
-        Response::new(response_buffer).map_err(|_| ErrorKind::CommFail.into())
+        Response::new(response_buffer)
     }
 
     fn send<T>(&mut self, bytes: &T) -> Result<(), Error>

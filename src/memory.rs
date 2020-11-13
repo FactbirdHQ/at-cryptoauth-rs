@@ -69,7 +69,6 @@ impl Zone {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(u8)]
 pub enum Slot {
     /// PrivateKey0x contains 36 bytes, taking 2 block reads.
     PrivateKey00 = 0x00,
@@ -101,6 +100,38 @@ impl Slot {
     /// Check if a slot can store certificates.
     pub fn is_certificate(&self) -> bool {
         Self::Certificate09 <= *self
+    }
+
+    pub fn keys() -> KeysIter {
+        KeysIter(0x00..=0x0f)
+    }
+}
+
+pub struct KeysIter(RangeInclusive<usize>);
+
+impl Iterator for KeysIter {
+    type Item = Slot;
+    fn next(&mut self) -> Option<Self::Item> {
+        use Slot::*;
+        self.0.next().and_then(|i| match i {
+            x if x == PrivateKey00 as usize => PrivateKey00.into(),
+            x if x == PrivateKey01 as usize => PrivateKey01.into(),
+            x if x == PrivateKey02 as usize => PrivateKey02.into(),
+            x if x == PrivateKey03 as usize => PrivateKey03.into(),
+            x if x == PrivateKey04 as usize => PrivateKey04.into(),
+            x if x == PrivateKey05 as usize => PrivateKey05.into(),
+            x if x == PrivateKey06 as usize => PrivateKey06.into(),
+            x if x == PrivateKey07 as usize => PrivateKey07.into(),
+            x if x == Data08 as usize => Data08.into(),
+            x if x == Certificate09 as usize => Certificate09.into(),
+            x if x == Certificate0a as usize => Certificate0a.into(),
+            x if x == Certificate0b as usize => Certificate0b.into(),
+            x if x == Certificate0c as usize => Certificate0c.into(),
+            x if x == Certificate0d as usize => Certificate0d.into(),
+            x if x == Certificate0e as usize => Certificate0e.into(),
+            x if x == Certificate0f as usize => Certificate0f.into(),
+            _ => None,
+        })
     }
 }
 

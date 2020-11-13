@@ -4,7 +4,6 @@ use super::error::{Error, ErrorKind};
 use super::memory::{Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder};
 use core::convert::TryFrom;
-use signature;
 
 // Enumerate objects you may want from the device. Provide a bunch of
 // specialized return types since most of the commands return status code only.
@@ -161,7 +160,7 @@ pub struct Nonce {
     value: [u8; 32],
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OpCode {
     /// CheckMac command op-code
     #[allow(dead_code)]
