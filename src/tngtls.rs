@@ -237,6 +237,10 @@ mod tests {
             }
         }
 
+        fn is_private(&self) -> bool {
+            self.key_config & 0x01 != 0x00
+        }
+
         fn key_type(&self) -> u16 {
             (self.key_config >> 2) & 0x07
         }
@@ -334,25 +338,28 @@ mod tests {
     #[test]
     fn provision() {
         let auth_priv = Provision::new(AUTH_PRIVATE_KEY);
+        assert_eq!(true, auth_priv.is_private());
         assert_eq!(KEY_TYPE_P256, auth_priv.key_type());
+        assert_eq!(true, auth_priv.require_nonce());
         assert_eq!(0x05, auth_priv.read_key());
         assert_eq!("Clear text", auth_priv.write_permission());
-        assert_eq!(true, auth_priv.require_nonce());
         assert_eq!(0, auth_priv.creation_commands().len());
 
         let sign_priv = Provision::new(SIGN_PRIVATE_KEY);
+        assert_eq!(true, sign_priv.is_private());
         assert_eq!(KEY_TYPE_P256, sign_priv.key_type());
+        assert_eq!(true, sign_priv.require_nonce());
         assert_eq!(0x02, sign_priv.read_key());
         assert_eq!("Clear text", sign_priv.write_permission());
-        assert_eq!(true, sign_priv.require_nonce());
         assert_eq!(0, sign_priv.creation_commands().len());
 
         for key_id in [USER_PRIVATE_KEY1, USER_PRIVATE_KEY2, USER_PRIVATE_KEY3].iter() {
             let user_priv = Provision::new(*key_id);
+            assert_eq!(true, user_priv.is_private());
             assert_eq!(KEY_TYPE_P256, user_priv.key_type());
+            assert_eq!(true, user_priv.require_nonce());
             assert_eq!(0x05, user_priv.read_key());
             assert_eq!("Never", user_priv.write_permission());
-            assert_eq!(true, user_priv.require_nonce());
             assert_eq!(&[GenKey, DeriveKey], user_priv.creation_commands().deref());
         }
 

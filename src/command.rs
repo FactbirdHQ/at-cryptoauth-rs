@@ -90,7 +90,7 @@ impl TryFrom<&[u8]> for Serial {
         let mut value = [0; 9];
         value[0..4].as_mut().copy_from_slice(&buffer[0..4]);
         value[4..9].as_mut().copy_from_slice(&buffer[8..13]);
-        Ok(Serial { value })
+        Ok(Self { value })
     }
 }
 
@@ -112,6 +112,20 @@ impl AsRef<[u8]> for Signature {
         &self.value
     }
 }
+
+impl TryFrom<&[u8]> for Signature {
+    type Error = Error;
+    fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
+        if buffer.len() != 0x40 {
+            return Err(ErrorKind::BadParam.into());
+        }
+        let mut value = [0; 0x40];
+        value.as_mut().copy_from_slice(buffer);
+        Ok(Self { value })
+    }
+}
+
+pub type PublicKey = Signature;
 
 impl signature::Signature for Signature {
     fn from_bytes(bytes: &[u8]) -> Result<Self, signature::Error> {
@@ -173,7 +187,6 @@ pub(crate) enum OpCode {
     /// GenDig command op-code
     GenDig = 0x15,
     /// GenKey command op-code
-    #[allow(dead_code)]
     GenKey = 0x40,
     /// HMAC command op-code
     #[allow(dead_code)]
@@ -246,7 +259,10 @@ pub(crate) struct Info<'a>(PacketBuilder<'a>);
 pub(crate) struct Lock<'a>(PacketBuilder<'a>);
 #[allow(dead_code)]
 pub(crate) struct Mac<'a>(PacketBuilder<'a>);
-pub(crate) struct NonceCmd<'a>(PacketBuilder<'a>);
+pub(crate) struct NonceCtx<'a> {
+    builder: PacketBuilder<'a>,
+    counter: u32,
+}
 #[allow(dead_code)]
 pub(crate) struct Pause<'a>(PacketBuilder<'a>);
 
@@ -290,12 +306,28 @@ impl<'a> GenDig<'a> {
 
 /// GenKey
 impl<'a> GenKey<'a> {
-    #[allow(dead_code)]
+    // Config zone should be locked, otherwise GenKey always fails regardless of
+    // mode.
+    const MODE_PRIVATE: u8 = 0x04; // Private key generation
+    const MODE_PUBLIC: u8 = 0x00; // Public key calculation
+    const MODE_DIGEST: u8 = 0x08; // PubKey digest will be created after the public key is calculated
+    const MODE_PUBKEY_DIGEST: u8 = 0x10; // Calculate PubKey digest on the public key in KeyId
+
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
     }
-}
 
+    pub(crate) fn private_key(&mut self, key_id: Slot) -> Result<Packet, Error> {
+        let mode = 0;
+        let packet = self
+            .0
+            .opcode(OpCode::GenKey)
+            .mode(Self::MODE_PRIVATE)
+            .param2(key_id as u16)
+            .build();
+        Ok(packet)
+    }
+}
 impl<'a> Info<'a> {
     /// Info mode Revision
     const MODE_REVISION: u8 = 0x00;
@@ -340,7 +372,7 @@ impl<'a> Lock<'a> {
 }
 
 /// Nonce
-impl<'a> NonceCmd<'a> {
+impl<'a> NonceCtx<'a> {
     const MODE_MASK: u8 = 0x03; // Nonce mode bits 2 to 7 are 0.
     const MODE_SEED_UPDATE: u8 = 0x00; // Nonce mode: update seed
     const MODE_NO_SEED_UPDATE: u8 = 0x01; // Nonce mode: do not update seed
@@ -356,18 +388,25 @@ impl<'a> NonceCmd<'a> {
 
     // num_in, 32 or 64 bytes.
 
-    #[allow(dead_code)]
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
-        Self(builder)
+        let counter = 0x4432;
+        Self { builder, counter }
     }
 
     // TODO: Usage of Nonce, especially its correct timing is not clear. In
     // `test/api_atcab/atca_tests_aes.c`, AES encryption/decryption assumes
     // nonce value is loaded to TempKey in advance.
-
-    fn nonce(&mut self) -> Self {
-        unimplemented!()
+    pub(crate) fn nonce(&mut self) -> Result<Packet, Error> {
+        let data = &[self.counter as u8; 32];
+        let packet = self
+            .builder
+            .opcode(OpCode::Nonce)
+            .mode(Self::MODE_PASSTHROUGH)
+            .pdu_data(data)
+            .build();
+        Ok(packet)
     }
+
     fn load(&mut self) -> Self {
         unimplemented!()
     }
@@ -608,5 +647,31 @@ mod tests {
         assert_eq!(packet[0x02], OpCode::Sha as u8);
         assert_eq!(packet[0x03], Sha::MODE_SHA256_START);
         assert_eq!(packet[0x04..0x06], [0x00, 0x00]);
+    }
+
+    #[test]
+    fn lock() {
+        let buf = &mut [0x00u8; 0xff];
+        let packet = Lock::new(PacketBuilder::new(buf.as_mut()))
+            .zone(Zone::Config)
+            .unwrap()
+            .buffer(buf.as_ref());
+        assert_eq!(packet[0x01], 0x07);
+        assert_eq!(packet[0x02], OpCode::Lock as u8);
+        assert_eq!(packet[0x03], 0x80);
+        assert_eq!(packet[0x04..0x06], [0x00, 0x00]);
+    }
+
+    #[test]
+    fn genkey() {
+        let buf = &mut [0x00u8; 0xff];
+        let packet = GenKey::new(PacketBuilder::new(buf.as_mut()))
+            .private_key(Slot::PrivateKey01)
+            .unwrap()
+            .buffer(buf.as_ref());
+        assert_eq!(packet[0x01], 0x07);
+        assert_eq!(packet[0x02], OpCode::GenKey as u8);
+        assert_eq!(packet[0x03], 0x04);
+        assert_eq!(packet[0x04..0x06], [0x01, 0x00]);
     }
 }

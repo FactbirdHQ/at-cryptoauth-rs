@@ -1,5 +1,5 @@
 use super::clock_divider::ClockDivider;
-use super::command::{self, Block, Digest, Info, Lock, Random, Serial, Signature, Word};
+use super::command::{self, Block, Digest, GenKey, Info, Lock, NonceCtx, Random, Serial, Signature, Word, PublicKey};
 use super::datalink::I2c;
 use super::error::{Error, ErrorKind};
 use super::memory::{CertificateRepr, Size, Slot, Zone};
@@ -94,7 +94,15 @@ where
 
     // Nonce load
     pub fn nonce(&mut self) -> Result<(), Error> {
-        unimplemented!()
+        let packet = NonceCtx::new(self.packet_builder()).nonce()?;
+        self.execute(packet).map(drop)
+    }
+
+    // Create private key
+    pub fn create_private_key(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
+        let packet = GenKey::new(self.packet_builder()).private_key(key_id)?;
+        let response = self.execute(packet)?;
+        PublicKey::try_from(response.as_ref())
     }
 }
 
@@ -166,6 +174,14 @@ where
                 Some(result)
             })
             .try_for_each(identity)
+    }
+
+    pub fn write_aes_key(&mut self, key_id: Slot, aes_key: impl AsRef<[u8]>) -> Result<(), Error> {
+        let mut data = Block::default();
+        data.as_mut().copy_from_slice(aes_key.as_ref());
+        let packet = command::Write::new(self.atca.packet_builder())
+            .slot(key_id, 0 as u8, &data)?;
+        self.atca.execute(packet).map(drop)
     }
 
     pub fn is_slot_locked(&mut self, slot: Slot) -> Result<bool, Error> {

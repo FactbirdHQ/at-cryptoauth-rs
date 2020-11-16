@@ -17,13 +17,14 @@ const ADDRESS: u8 = 0xc0 >> 1;
 const DELAY_US: u32 = 1500;
 
 // By default, wake up sequence is repeated up to 20 times until it succeeds.
-// Multipy by 2, otherwise you see RxFail on wake up. It happens when you try to
-// write a word to the config zone on Raspberry PI's I2C. This behaviour might
-// be specific to linux HAL.
+// Multiply by 2, otherwise you see RxFail on wake up. It happens when you try
+// to write a word to the config zone on Raspberry Pi's I2C. This behavior might
+// be specific to linux HAL. What's worse, GenKey command from Raspberry Pi
+// needs to retry 20 * 15 times until it succeeds.
 #[cfg(target_os = "none")]
 const RETRY: usize = 20;
 #[cfg(not(target_os = "none"))]
-const RETRY: usize = 20 * 2;
+const RETRY: usize = 20 * 15;
 
 /// So-called "word address".
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -87,7 +88,7 @@ where
         from_fn(|| self.phy.write(ADDRESS, from_ref(&word_address)).into())
             .take(RETRY)
             .find_map(Result::<_, _>::ok)
-            .ok_or_else(|| Error::from(ErrorKind::RxFail))?;
+            .ok_or_else(|| Error::from(ErrorKind::TxFail))?;
 
         let min_resp_size = 4;
         self.phy
@@ -139,6 +140,8 @@ where
 
     pub(crate) fn sleep(&mut self) -> Result<(), Error> {
         let word_address = Transaction::Sleep as u8;
+        // Wait for the I2C bus to be ready.
+        self.delay.delay_us(30);
         self.phy
             .write(ADDRESS, from_ref(&word_address))
             .map_err(|_| ErrorKind::TxFail.into())
