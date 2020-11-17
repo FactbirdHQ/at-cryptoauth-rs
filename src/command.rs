@@ -45,7 +45,7 @@ impl AsMut<[u8]> for Word {
 /// A return type of which API?
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Block {
-    value: [u8; 0x10],
+    value: [u8; Size::Block as usize],
 }
 
 impl TryFrom<&[u8]> for Block {
@@ -133,7 +133,7 @@ impl signature::Signature for Signature {
             return Err(signature::Error::new());
         }
         let mut value = [0; 0x40];
-        value[..].as_mut().copy_from_slice(bytes);
+        value.as_mut().copy_from_slice(bytes);
         Ok(Self { value })
     }
 }
@@ -197,16 +197,13 @@ pub(crate) enum OpCode {
     #[allow(dead_code)]
     Mac = 0x08,
     /// Nonce command op-code
-    #[allow(dead_code)]
     Nonce = 0x16,
     /// Pause command op-code
     #[allow(dead_code)]
     Pause = 0x01,
     /// PrivWrite command op-code
-    #[allow(dead_code)]
     PrivWrite = 0x46,
     /// Random command op-code
-    #[allow(dead_code)]
     Random = 0x1B,
     /// Read command op-code
     Read = 0x02,
@@ -269,9 +266,7 @@ pub(crate) struct Pause<'a>(PacketBuilder<'a>);
 // For best security, it is recommended that the `PrivWrite` command not be used,
 // and that private keys be internally generated from the RNG using the `GenKey`
 // command.
-#[allow(dead_code)]
 pub(crate) struct PrivWrite<'a>(PacketBuilder<'a>);
-#[allow(dead_code)]
 pub(crate) struct Random<'a>(PacketBuilder<'a>);
 pub(crate) struct Read<'a>(PacketBuilder<'a>);
 pub(crate) struct Sign<'a>(PacketBuilder<'a>);
@@ -318,11 +313,20 @@ impl<'a> GenKey<'a> {
     }
 
     pub(crate) fn private_key(&mut self, key_id: Slot) -> Result<Packet, Error> {
-        let mode = 0;
         let packet = self
             .0
             .opcode(OpCode::GenKey)
             .mode(Self::MODE_PRIVATE)
+            .param2(key_id as u16)
+            .build();
+        Ok(packet)
+    }
+
+    pub(crate) fn public_key(&mut self, key_id: Slot) -> Result<Packet, Error> {
+        let packet = self
+            .0
+            .opcode(OpCode::GenKey)
+            .mode(Self::MODE_PUBLIC)
             .param2(key_id as u16)
             .build();
         Ok(packet)
@@ -418,6 +422,34 @@ impl<'a> NonceCtx<'a> {
     }
     fn challenge_seed_update(&mut self) -> Self {
         unimplemented!()
+    }
+}
+
+/// PrivWrite
+impl<'a> PrivWrite<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    pub(crate) fn write_private_key(
+        &mut self,
+        key_id: Slot,
+        private_key: &Block,
+    ) -> Result<Packet, Error> {
+        // Input is an ECC private key consisting of padding 4 bytes, all 0s and 32
+        // byte integer.
+        let range = 4..Size::Block.len() + 4;
+        let length = range.end;
+        self.0.packet_buffer()[range]
+            .as_mut()
+            .copy_from_slice(private_key.as_ref());
+        let packet = self
+            .0
+            .pdu_length(length)
+            .opcode(OpCode::PrivWrite)
+            .param2(key_id as u16)
+            .build();
+        Ok(packet)
     }
 }
 
@@ -533,7 +565,6 @@ impl<'a> Aes<'a> {
 impl<'a> Random<'a> {
     const MODE_SEED_UPDATE: u8 = 0x00;
 
-    #[allow(dead_code)]
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
     }
@@ -542,7 +573,7 @@ impl<'a> Random<'a> {
         let packet = self
             .0
             .opcode(OpCode::Random)
-            .mode(Self::MODE_SEED_UPDATE)
+            // .mode(Self::MODE_SEED_UPDATE)
             .build();
         Ok(packet)
     }

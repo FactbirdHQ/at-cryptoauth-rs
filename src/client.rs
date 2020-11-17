@@ -1,5 +1,8 @@
 use super::clock_divider::ClockDivider;
-use super::command::{self, Block, Digest, GenKey, Info, Lock, NonceCtx, Random, Serial, Signature, Word, PublicKey};
+use super::command::{
+    self, Block, Digest, GenKey, Info, Lock, NonceCtx, PrivWrite, PublicKey, Random, Serial,
+    Signature, Word,
+};
 use super::datalink::I2c;
 use super::error::{Error, ErrorKind};
 use super::memory::{CertificateRepr, Size, Slot, Zone};
@@ -98,9 +101,24 @@ where
         self.execute(packet).map(drop)
     }
 
-    // Create private key
+    // Create private key and output its public key.
     pub fn create_private_key(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
         let packet = GenKey::new(self.packet_builder()).private_key(key_id)?;
+        let response = self.execute(packet)?;
+        PublicKey::try_from(response.as_ref())
+    }
+
+    // Write private key.
+    pub fn write_private_key(&mut self, key_id: Slot, private_key: &Block) -> Result<(), Error> {
+        let packet =
+            PrivWrite::new(self.packet_builder()).write_private_key(key_id, private_key)?;
+        self.execute(packet).map(drop)
+    }
+
+    // Given a private key created and stored in advance, calculate its public key.
+    pub fn generate_pubkey(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
+        let mut pubkey = [0x00u8; PUBLIC_KEY];
+        let packet = GenKey::new(self.packet_builder()).public_key(key_id)?;
         let response = self.execute(packet)?;
         PublicKey::try_from(response.as_ref())
     }
@@ -178,9 +196,9 @@ where
 
     pub fn write_aes_key(&mut self, key_id: Slot, aes_key: impl AsRef<[u8]>) -> Result<(), Error> {
         let mut data = Block::default();
-        data.as_mut().copy_from_slice(aes_key.as_ref());
-        let packet = command::Write::new(self.atca.packet_builder())
-            .slot(key_id, 0 as u8, &data)?;
+        data.as_mut()[..0x10].copy_from_slice(aes_key.as_ref());
+        let packet =
+            command::Write::new(self.atca.packet_builder()).slot(key_id, 0 as u8, &data)?;
         self.atca.execute(packet).map(drop)
     }
 
