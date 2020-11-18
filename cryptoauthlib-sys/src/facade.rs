@@ -1,10 +1,7 @@
 use super::c_types;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
 use super::DELAY_WRAPPER;
 use super::{ATCAIface, ATCAIfaceCfg, ATCA_STATUS, ATCA_STATUS_ATCA_COMM_FAIL};
 use core::ffi::c_void;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-use stm32l4xx_hal::prelude::*;
 
 #[no_mangle]
 pub extern "C" fn hal_i2c_init(_hal: *mut c_void, _cfg: *mut ATCAIfaceCfg) -> ATCA_STATUS {
@@ -66,7 +63,6 @@ pub extern "C" fn hal_i2c_discover_devices(
 }
 
 /// Delay MS
-#[cfg(all(target_arch = "arm", target_os = "none"))]
 #[no_mangle]
 #[export_name = "hal_delay_ms"]
 pub extern "C" fn delay_ms(ms: u32) {
@@ -77,13 +73,8 @@ pub extern "C" fn delay_ms(ms: u32) {
             .expect("DELAY not initialized.")
     }
 }
-#[cfg(not(all(target_arch = "arm", target_os = "none")))]
-#[no_mangle]
-#[export_name = "hal_delay_ms"]
-pub extern "C" fn delay_ms(_ms: u32) {}
 
 /// Delay US
-#[cfg(all(target_arch = "arm", target_os = "none"))]
 #[no_mangle]
 #[export_name = "hal_delay_us"]
 pub extern "C" fn delay_us(us: u32) {
@@ -94,7 +85,3 @@ pub extern "C" fn delay_us(us: u32) {
             .expect("DELAY not initialized.")
     }
 }
-#[cfg(not(all(target_arch = "arm", target_os = "none")))]
-#[no_mangle]
-#[export_name = "hal_delay_us"]
-pub extern "C" fn delay_us(_us: u32) {}

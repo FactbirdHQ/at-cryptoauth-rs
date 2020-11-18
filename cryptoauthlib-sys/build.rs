@@ -8,29 +8,63 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process::Command;
 
+struct CmakeToolchainInner {
+    c_compiler: String,
+    cpp_compiler: String,
+    sysroot: String,
+}
+
+struct CmakeToolchain(Option<CmakeToolchainInner>);
+impl CmakeToolchain {
+    // Retrieve SYSROOT path of a given gcc toolchain
+    fn get_sysroot(compiler: &str) -> Result<String, Box<dyn Error>> {
+        let cmd_output = Command::new(compiler).arg("-print-sysroot").output()?;
+        let mut sysroot = String::from_utf8(cmd_output.stdout)?;
+        assert_eq!(sysroot.pop(), Some('\n'));
+        Ok(sysroot)
+    }
+
+    fn new() -> Result<Self, Box<dyn Error>> {
+        let target = env::var("TARGET")?;
+        let c_compiler = match target.as_str() {
+            // Bare-metal
+            "thumbv7em-none-eabihf" => "arm-none-eabi-gcc".to_string(),
+            // Raspberry Pi
+            "armv7-unknown-linux-gnueabihf" => "arm-none-linux-gnueabihf-gcc".to_string(),
+            // Target triple does not require cross-compiling
+            _ => return Ok(Self(None)),
+        };
+        let cpp_compiler = format!("{}++", &c_compiler[..c_compiler.len() - 2]);
+        let sysroot = Self::get_sysroot(&c_compiler)?;
+        Ok(Self(
+            CmakeToolchainInner {
+                c_compiler,
+                cpp_compiler,
+                sysroot,
+            }
+            .into(),
+        ))
+    }
+
+    fn cross_compile(&self) -> Option<&CmakeToolchainInner> {
+        self.0.as_ref()
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let cross_compile = match env::var("TARGET")?.as_str() {
-        "thumbv7em-none-eabihf" => Some(()),
-        // Target triple does not require cross-compiling
-        _ => None,
-    };
-
-    // Retrieve SYSROOT path
-    let cmd_output = Command::new("arm-none-eabi-gcc")
-        .arg("-print-sysroot")
-        .output()?;
-    let mut sysroot = String::from_utf8(cmd_output.stdout)?;
-    assert_eq!(sysroot.pop(), Some('\n'));
-
+    let toolchain = CmakeToolchain::new()?;
     let out_path = PathBuf::from(env::var("OUT_DIR")?);
 
     // Compile a static link library
     let mut config = Config::new("cryptoauthlib");
-    let dst = cross_compile
+    let dst = toolchain
+        .cross_compile()
         .iter()
-        .fold(&mut config, |acc, ()| {
+        .fold(&mut config, |acc, cross| {
             acc.define("CMAKE_SYSTEM_PROCESSOR", "arm")
                 .define("CMAKE_CROSSCOMPILING", "TRUE")
+                .define("CMAKE_C_COMPILER", &cross.c_compiler)
+                .define("CMAKE_CXX_COMPILER", &cross.cpp_compiler)
         })
         .define("CMAKE_SYSTEM_NAME", "Generic")
         .define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY")
@@ -49,10 +83,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build();
 
     // Bind CryptoAuthLib library
-    let bindings = cross_compile
+    let bindings = toolchain
+        .cross_compile()
         .iter()
-        .fold(bindgen::Builder::default(), |acc, ()| {
-            acc.clang_arg(format!("--sysroot={}", sysroot))
+        .fold(bindgen::Builder::default(), |acc, cross| {
+            acc.clang_arg(format!("--sysroot={}", &cross.sysroot))
         })
         .use_core()
         .ctypes_prefix("c_types")

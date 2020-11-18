@@ -9,11 +9,10 @@ use cortex_m_rt::exception;
 use cortex_m_rt::ExceptionFrame;
 use cortex_m_semihosting::hio;
 use cryptoauthlib_sys::hal::I2c as HalI2c;
-use cryptoauthlib_sys::DELAY_WRAPPER;
 use cryptoauthlib_sys::{
     atca_command, atca_device, atca_iface, calib_info, calib_is_locked, calib_is_slot_locked,
     calib_read_config_zone, calib_read_serial_number, cfg_ateccx08a_i2c_default, initATCADevice,
-    ATCA_STATUS_ATCA_SUCCESS,
+    init_delay_wrapper, ATCA_STATUS_ATCA_SUCCESS,
 };
 use hal::delay::Delay;
 use hal::i2c::I2c;
@@ -58,13 +57,9 @@ fn main() -> ! {
         .into_open_drain_output(&mut gpiob.moder, &mut gpiob.otyper);
     let sda = sda.into_af4(&mut gpiob.moder, &mut gpiob.afrh);
 
-    // Construct delay object
-    let delay = Delay::new(cp.SYST, clocks);
-
-    // Initialize the global variable
-    unsafe {
-        DELAY_WRAPPER.replace(delay.into());
-    }
+    // Construct delay object and initialize the global variable
+    let mut delay = Delay::new(cp.SYST, clocks);
+    init_delay_wrapper(&mut delay);
 
     // Construct I2C
     let i2c = I2c::i2c2(dp.I2C2, (scl, sda), 100.khz(), clocks, &mut rcc.apb1r1);

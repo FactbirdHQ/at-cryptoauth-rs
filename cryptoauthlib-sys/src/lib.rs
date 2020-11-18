@@ -3,13 +3,26 @@
 #![allow(non_snake_case)]
 #![no_std]
 mod facade;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
 pub mod hal;
 
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-use stm32l4xx_hal::delay::Delay;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-pub static mut DELAY_WRAPPER: Option<Delay> = None;
+use core::mem::transmute;
+use embedded_hal::blocking::delay::{DelayMs, DelayUs};
+
+pub static mut DELAY_WRAPPER: Option<&mut dyn DelayWrapper> = None;
+
+pub trait DelayWrapper: DelayUs<u32> + DelayMs<u32> {}
+impl<T> DelayWrapper for T where T: DelayUs<u32> + DelayMs<u32> {}
+
+pub fn init_delay_wrapper<T: DelayWrapper>(delay: &mut T) {
+    let delay_ref = unsafe {
+        transmute::<&mut dyn DelayWrapper, &'static mut dyn DelayWrapper>(
+            delay as &mut dyn DelayWrapper,
+        )
+    };
+    unsafe {
+        DELAY_WRAPPER.replace(delay_ref);
+    }
+}
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
@@ -24,12 +37,4 @@ pub mod c_types {
     pub type c_long = i64;
     pub type c_ulong = u64;
     pub type c_ulonglong = i64;
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
 }
