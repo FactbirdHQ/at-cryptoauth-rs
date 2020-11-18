@@ -438,14 +438,16 @@ impl<'a> PrivWrite<'a> {
     ) -> Result<Packet, Error> {
         // Input is an ECC private key consisting of padding 4 bytes, all 0s and 32
         // byte integer.
-        let range = 4..Size::Block.len() + 4;
-        let length = range.end;
-        self.0.packet_buffer()[range]
+        let private_key_range = 4 .. Size::Block.len() + 4;
+        let private_key_length = private_key_range.end;
+        let mac_range = private_key_length .. private_key_length + Size::Block.len();
+        let mac_length = mac_range.end;
+        self.0.packet_buffer()[private_key_range]
             .as_mut()
             .copy_from_slice(private_key.as_ref());
         let packet = self
             .0
-            .pdu_length(length)
+            .pdu_length(mac_length)
             .opcode(OpCode::PrivWrite)
             .param2(key_id as u16)
             .build();
