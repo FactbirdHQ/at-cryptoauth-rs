@@ -1,20 +1,19 @@
 use super::clock_divider::ClockDivider;
 use super::command::{
-    self, Block, Digest, GenKey, Info, Lock, NonceCtx, PrivWrite, PublicKey, Random, Serial,
-    Signature, Word,
+    self, GenKey, Info, Lock, NonceCtx, PrivWrite, PublicKey, Random, Serial, Word,
 };
 use super::datalink::I2c;
 use super::error::{Error, ErrorKind};
 use super::memory::{CertificateRepr, Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder, Response};
 use super::tngtls::TrustAndGo;
+use super::{Block, Digest, Signature};
+use core::convert::TryInto;
 use core::convert::{identity, TryFrom};
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
 use heapless::{consts, Vec};
-
-pub const PUBLIC_KEY: usize = 0x40;
 
 pub struct AtCaClient<PHY, D> {
     i2c: I2c<PHY, D>,
@@ -76,7 +75,7 @@ where
     }
 
     pub fn tng(&mut self) -> Result<TrustAndGo<'_, PHY, D>, Error> {
-        TrustAndGo::try_from(self)
+        self.try_into()
     }
 
     pub fn sleep(&mut self) -> Result<(), Error> {
@@ -85,14 +84,12 @@ where
 
     pub fn info(&mut self) -> Result<Word, Error> {
         let packet = Info::new(self.packet_builder()).revision()?;
-        let response = self.execute(packet)?;
-        Word::try_from(response.as_ref())
+        self.execute(packet)?.as_ref().try_into()
     }
 
     pub fn random(&mut self) -> Result<Block, Error> {
         let packet = Random::new(self.packet_builder()).random()?;
-        let response = self.execute(packet)?;
-        Block::try_from(response.as_ref())
+        self.execute(packet)?.as_ref().try_into()
     }
 
     // Nonce load
@@ -104,8 +101,7 @@ where
     // Create private key and output its public key.
     pub fn create_private_key(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
         let packet = GenKey::new(self.packet_builder()).private_key(key_id)?;
-        let response = self.execute(packet)?;
-        PublicKey::try_from(response.as_ref())
+        self.execute(packet)?.as_ref().try_into()
     }
 
     // Write private key.
@@ -117,10 +113,8 @@ where
 
     // Given a private key created and stored in advance, calculate its public key.
     pub fn generate_pubkey(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
-        let mut pubkey = [0x00u8; PUBLIC_KEY];
         let packet = GenKey::new(self.packet_builder()).public_key(key_id)?;
-        let response = self.execute(packet)?;
-        PublicKey::try_from(response.as_ref())
+        self.execute(packet)?.as_ref().try_into()
     }
 }
 
@@ -145,12 +139,11 @@ where
     pub fn serial_number(&mut self) -> Result<Serial, Error> {
         let packet =
             command::Read::new(self.atca.packet_builder()).read(Zone::Config, Size::Block, 0, 0)?;
-        let response = self.atca.execute(packet)?;
-        Serial::try_from(response.as_ref())
+        self.atca.execute(packet)?.as_ref().try_into()
     }
 
-    pub fn pubkey(&mut self, key_id: Slot) -> Result<[u8; PUBLIC_KEY], Error> {
-        let mut pubkey = [0x00u8; PUBLIC_KEY];
+    pub fn pubkey(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
+        let mut pubkey = PublicKey::default();
         CertificateRepr::new()
             .enumerate()
             .scan(0, |offset, (i, ranges)| {
@@ -160,7 +153,7 @@ where
                         let response = self.atca.execute(packet)?;
                         for range in ranges {
                             let dst = *offset..*offset + range.len();
-                            pubkey[dst].copy_from_slice(&response.as_ref()[range.clone()]);
+                            pubkey.as_mut()[dst].copy_from_slice(&response.as_ref()[range.clone()]);
                             *offset += range.len();
                         }
                         Ok(())
@@ -416,8 +409,7 @@ where
 
     pub fn finalize(&mut self) -> Result<Digest, Error> {
         let packet = command::Sha::new(self.atca.packet_builder()).end()?;
-        let response = self.atca.execute(packet)?;
-        Digest::try_from(response.as_ref())
+        self.atca.execute(packet)?.as_ref().try_into()
     }
 
     pub fn digest(&mut self, data: &[u8]) -> Result<Digest, Error> {
@@ -443,6 +435,9 @@ where
     D: DelayUs<u32>,
 {
     pub fn sign_digest(&mut self, msg: &[u8]) -> Result<Signature, Error> {
+        // 1. Random value generation
+        // 2. Nonce load
+        // 3. Sign
         let _ = msg;
         let _ = self.atca;
         let _ = self.key_id;
@@ -463,6 +458,8 @@ where
     D: DelayUs<u32>,
 {
     pub fn verify(&mut self, digest: impl AsRef<[u8]>) -> Result<Signature, Error> {
+        // 1. Nonce load
+        // 2. Verify
         let _ = digest;
         let _ = self.atca;
         let _ = self.key_id;

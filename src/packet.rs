@@ -84,12 +84,16 @@ impl<'a> PacketBuilder<'a> {
         self.buffer[PACKET_OFFSET..].as_mut()
     }
 
+    pub(crate) fn pdu_buffer(&mut self) -> &mut [u8] {
+        self.buffer[PDU_OFFSET..].as_mut()
+    }
+
     pub(crate) fn build(&mut self) -> Packet {
         let packet_length = self
             .pdu_length
             .iter()
             .fold(CMD_SIZE_MIN, |min, pdu_len| min + pdu_len);
-        let opcode = self.opcode.expect("FIXME");
+        let opcode = self.opcode.expect("The opcode field is mandatory");
         let mode = self.mode.unwrap_or_default();
         let param2 = self.param2.unwrap_or_default();
 
@@ -115,6 +119,12 @@ impl<'a> PacketBuilder<'a> {
     }
 }
 
+impl<'a> From<&'a mut [u8]> for PacketBuilder<'a> {
+    fn from(buffer: &'a mut [u8]) -> Self {
+        Self::new(buffer)
+    }
+}
+
 /// Assuming buffer is alocated elsewhere, `Packet` designates subslice in use.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Packet {
@@ -136,7 +146,6 @@ impl Packet {
 // TODO: Testing purpose only. Should not be public.
 #[derive(Clone, Copy, Debug)]
 pub struct Response<'a> {
-    // status: u8, necessary?
     pdu: &'a [u8],
 }
 
@@ -173,11 +182,5 @@ impl<'a> Response<'a> {
 impl<'a> AsRef<[u8]> for Response<'a> {
     fn as_ref(&self) -> &[u8] {
         self.pdu
-    }
-}
-
-impl<'a> From<&'a mut [u8]> for PacketBuilder<'a> {
-    fn from(buffer: &'a mut [u8]) -> Self {
-        Self::new(buffer)
     }
 }

@@ -14,8 +14,8 @@ pub enum Size {
 impl Size {
     pub(crate) fn len(&self) -> usize {
         match self {
-            Size::Word => Size::Word as usize,
-            Size::Block => Size::Block as usize,
+            Self::Word => Self::Word as usize,
+            Self::Block => Self::Block as usize,
         }
     }
 }
