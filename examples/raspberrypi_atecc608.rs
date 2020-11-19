@@ -1,6 +1,11 @@
-// $ cargo b --target armv7-unknown-linux-gnueabihf
-// $ scp target/armv7-unknown-linux-gnueabihf/debug/raspberrypi_atecc608 pi@<IP addr>:/home/pi/raspberrypi_atecc608
-// $ ssh pi@<IP addr> "RUST_LOG=info ./raspberrypi_atecc608"
+// $ CROSS_COMPILE=arm-none-linux-gnueabihf- cargo b \
+//   --example raspberrypi_atecc608 --features std \
+//   --target armv7-unknown-linux-gnueabihf
+//
+// $ scp target/armv7-unknown-linux-gnueabihf/debug/examples/raspberrypi_atecc608 \
+//   pi@${PI_IP_ADDR}:/home/pi/
+//
+// $ ssh pi@${PI_IP_ADDR} "RUST_LOG=info ./raspberrypi_atecc608"
 use at_cryptoauth::client::AtCaClient;
 use at_cryptoauth::command::Block;
 use at_cryptoauth::memory::{Size, Slot, Zone};

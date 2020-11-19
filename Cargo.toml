@@ -27,5 +27,11 @@ panic-semihosting = "0.5.0"
 git = "https://github.com/stm32-rs/stm32l4xx-hal.git"
 features = ["rt", "stm32l4x5"]
 
-[[example]]
-name = "stm32l4xx_atecc608"
+[target.'cfg(all(target_arch = "arm", target_os = "linux"))'.dependencies]
+env_logger = { version = "0.8.1", optional = true }
+linux-embedded-hal = { version = "0.3.0", optional = true }
+log = { version = "0.4.0", optional = true }
+openssl = { version = "0.10.30", features = ["vendored"], optional = true }
+
+[features]
+std = ["env_logger", "linux-embedded-hal", "log", "openssl"]
