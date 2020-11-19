@@ -6,10 +6,9 @@
 //   pi@${PI_IP_ADDR}:/home/pi/
 //
 // $ ssh pi@${PI_IP_ADDR} "RUST_LOG=info ./raspberrypi_atecc608"
-use at_cryptoauth::client::AtCaClient;
-use at_cryptoauth::command::Block;
 use at_cryptoauth::memory::{Size, Slot, Zone};
-use at_cryptoauth::tngtls::{TrustAndGo, AES_KEY, AUTH_PRIVATE_KEY, SIGN_PRIVATE_KEY};
+use at_cryptoauth::tngtls::{AES_KEY, AUTH_PRIVATE_KEY, SIGN_PRIVATE_KEY};
+use at_cryptoauth::{AtCaClient, Block};
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
@@ -129,26 +128,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Lock config zone
-    if !atca
-        .memory()
-        .is_locked(Zone::Config)
-        .map_err(|e| format!("{}", e))?
-    {
-        let mut tng = TrustAndGo::new(&mut atca);
-        tng.configure_chip_options().map_err(|e| format!("{}", e))?;
-        tng.configure_permissions().map_err(|e| format!("{}", e))?;
-        tng.configure_key_types().map_err(|e| format!("{}", e))?;
-        atca.memory()
-            .lock(Zone::Config)
-            .map(|response| info!("Config zone is locked"))
-            .map_err(|e| format!("{}", e))?;
-    }
-
-    // Nonce is required
-    atca.nonce()
-        .map(|response| info!("Nonce is calculated"))
-        .map_err(|e| format!("{}", e))?;
+    // Enforce TrustAndGo device config and lock config zone
+    atca.tng().map_err(|e| format!("{}", e))?;
 
     // Leave data zone unloced.
     // Write AES key to AES_KEY slot
@@ -160,12 +141,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create a private key
     for key_id in Slot::keys() {
         if key_id.is_private_key() && PROVISION_KEYS.iter().all(|&p| p != key_id) {
-            // check_openssl_public_key_format(&mut atca, key_id)?;
+            check_openssl_public_key_format(&mut atca, key_id)?;
         }
     }
 
     for key_id in PROVISION_KEYS {
-        // check_openssl_private_key_format(&mut atca, *key_id)?;
+        check_openssl_private_key_format(&mut atca, *key_id)?;
         check_privwrite_key_format(&mut atca, *key_id)?;
     }
 
@@ -202,13 +183,7 @@ where
     atca.write_private_key(key_id, &test_private_key)
         .map_err(|e| format!("{}", e))?;
     let pub_key = atca.generate_pubkey(key_id).map_err(|e| format!("{}", e))?;
-    info!(
-        "{:?}, PRIVWRITE_FORMAT {:?}",
-        key_id,
-        TEST_PUBLIC_KEY.as_ref() == pub_key.as_ref()
-    );
-    info!("{:02x?}", TEST_PUBLIC_KEY);
-    info!("{:02x?}", pub_key.as_ref());
+    assert_eq!(TEST_PUBLIC_KEY, pub_key.as_ref());
     Ok(())
 }
 
@@ -233,8 +208,7 @@ where
         let y = BigNum::from_slice(&pub_key.as_ref()[32..]).map_err(|e| format!("{}", e))?;
         let openssl_pubkey = EcKey::from_public_key_affine_coordinates(&p256, &x, &y)
             .map_err(|e| format!("{}", e))?;
-
-        info!("{:?}, {:?}", key_id, openssl_pubkey.check_key());
+        assert!(openssl_pubkey.check_key().is_ok());
     }
     Ok(())
 }
@@ -263,7 +237,7 @@ where
 
     let pub_key = atca.generate_pubkey(key_id).map_err(|e| format!("{}", e))?;
     info!(
-        "Generated public key for {:?}, {:?}",
+        "Generated public key for {:?}, {:02x?}",
         key_id,
         &pub_key.as_ref()[..0x10]
     );
@@ -281,12 +255,8 @@ where
         .public_key()
         .affine_coordinates_gfp(&p256, &mut x_to_compare, &mut y_to_compare, &mut ctx)
         .map_err(|e| format!("{}", e))?;
-    info!(
-        "{:?}, {:?}, X, {:?}, Y, {:?}",
-        key_id,
-        openssl_public_key.check_key(),
-        x.to_vec() == x_to_compare.to_vec(),
-        y.to_vec() == y_to_compare.to_vec()
-    );
+    assert_eq!(x.to_vec(), x_to_compare.to_vec());
+    assert_eq!(y.to_vec(), y_to_compare.to_vec());
+    info!("{:?}, {:?}", key_id, openssl_public_key.check_key(),);
     Ok(())
 }

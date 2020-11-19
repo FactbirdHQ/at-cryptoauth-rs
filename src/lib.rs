@@ -1,9 +1,12 @@
 #![no_std]
-pub mod client;
+mod client;
 mod clock_divider;
-pub mod command;
+mod command;
 mod datalink;
-mod error;
+pub mod error;
 pub mod memory;
 mod packet;
 pub mod tngtls;
+
+pub use client::AtCaClient;
+pub use command::{Block, Digest, Signature};

@@ -4,18 +4,16 @@ use super::error::{Error, ErrorKind};
 use super::memory::{Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder};
 use core::convert::TryFrom;
+use generic_array::typenum::{U32, U4, U64, U9};
+use generic_array::GenericArray;
 
-// Enumerate objects you may want from the device. Provide a bunch of
-// specialized return types since most of the commands return status code only.
-
-/// Revision number and so on.
-/// A return type of API `info`.
+// Encapsulates raw 4 bytes. When it is a return value of `info`, it contains
+// the device's revision number.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Word {
-    value: [u8; Size::Word as usize],
+    value: GenericArray<u8, U4>,
 }
 
-// Parse a word from response buffer.
 impl TryFrom<&[u8]> for Word {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
@@ -31,21 +29,20 @@ impl TryFrom<&[u8]> for Word {
 
 impl AsRef<[u8]> for Word {
     fn as_ref(&self) -> &[u8] {
-        &self.value
+        self.value.as_ref()
     }
 }
 
 impl AsMut<[u8]> for Word {
     fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.value
+        self.value.as_mut()
     }
 }
 
-/// What's this?
-/// A return type of which API?
+// Encapsulates raw 32 bytes.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Block {
-    value: [u8; Size::Block as usize],
+    value: GenericArray<u8, U32>,
 }
 
 impl TryFrom<&[u8]> for Block {
@@ -63,53 +60,67 @@ impl TryFrom<&[u8]> for Block {
 
 impl AsRef<[u8]> for Block {
     fn as_ref(&self) -> &[u8] {
-        &self.value
+        self.value.as_ref()
     }
 }
 
 impl AsMut<[u8]> for Block {
     fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.value
+        self.value.as_mut()
     }
 }
 
-/// Serial number of 9 bytes. Its uniqueness is guaranteed.
-/// A return type of API `read_serial`.
-#[derive(Clone, Copy, Debug)]
+// Represents a serial number consisting of 9 bytes. Its uniqueness is
+// guaranteed. A return type of API `read_serial`.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Serial {
-    value: [u8; 9],
+    value: GenericArray<u8, U9>,
 }
 
-// Parse a serial number from response buffer.
 impl TryFrom<&[u8]> for Serial {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
         if buffer.len() != Size::Block.len() {
             return Err(ErrorKind::BadParam.into());
         }
-        let mut value = [0; 9];
+
+        let mut value = [0x00; 9];
         value[0..4].as_mut().copy_from_slice(&buffer[0..4]);
         value[4..9].as_mut().copy_from_slice(&buffer[8..13]);
-        Ok(Self { value })
+        Ok(Self {
+            value: value.into(),
+        })
     }
 }
 
 impl AsRef<[u8]> for Serial {
     fn as_ref(&self) -> &[u8] {
-        &self.value
+        self.value.as_ref()
+    }
+}
+
+impl AsMut<[u8]> for Serial {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.value.as_mut()
     }
 }
 
 /// A public key signature returned from a signing operation. Format is R and
 /// S integers in big-endian format. 64 bytes for P256 curve.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Signature {
-    value: [u8; 0x40],
+    value: GenericArray<u8, U64>,
 }
 
 impl AsRef<[u8]> for Signature {
     fn as_ref(&self) -> &[u8] {
-        &self.value
+        self.value.as_ref()
+    }
+}
+
+impl AsMut<[u8]> for Signature {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.value.as_mut()
     }
 }
 
@@ -119,59 +130,96 @@ impl TryFrom<&[u8]> for Signature {
         if buffer.len() != 0x40 {
             return Err(ErrorKind::BadParam.into());
         }
-        let mut value = [0; 0x40];
+
+        let mut value = Self::default();
         value.as_mut().copy_from_slice(buffer);
-        Ok(Self { value })
+        Ok(value)
     }
 }
 
-pub type PublicKey = Signature;
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PublicKey {
+    value: GenericArray<u8, U64>,
+}
+
+impl AsRef<[u8]> for PublicKey {
+    fn as_ref(&self) -> &[u8] {
+        self.value.as_ref()
+    }
+}
+
+impl AsMut<[u8]> for PublicKey {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.value.as_mut()
+    }
+}
+
+impl TryFrom<&[u8]> for PublicKey {
+    type Error = Error;
+    fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
+        if buffer.len() != 0x40 {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let mut value = Self::default();
+        value.as_mut().copy_from_slice(buffer);
+        Ok(value)
+    }
+}
 
 impl signature::Signature for Signature {
     fn from_bytes(bytes: &[u8]) -> Result<Self, signature::Error> {
-        if bytes.len() != 0x40 {
-            return Err(signature::Error::new());
-        }
-        let mut value = [0; 0x40];
-        value.as_mut().copy_from_slice(bytes);
-        Ok(Self { value })
+        Self::try_from(bytes).map_err(|_| signature::Error::new())
     }
 }
 
-// A digest yielded from cryptographic hash functions.
-// For reference, `digest` crate uses `GenericArray<u8, 32>`.
-#[derive(Clone, Copy, Debug)]
+// A digest yielded from cryptographic hash functions. Merely a wrapper around
+// `GenericArray<u8, 32>` of `digest` crate.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Digest {
-    value: [u8; 32],
+    value: GenericArray<u8, U32>,
 }
 
-// Parse digest from response buffer.
 impl TryFrom<&[u8]> for Digest {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
         if buffer.len() != 32 {
             return Err(ErrorKind::BadParam.into());
         }
-        let mut value = [0; 32];
+
+        let mut value = Self::default();
         value.as_mut().copy_from_slice(buffer.as_ref());
-        Ok(Self { value })
+        Ok(value)
     }
 }
 
 impl AsRef<[u8]> for Digest {
     fn as_ref(&self) -> &[u8] {
-        &self.value
+        self.value.as_ref()
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct PremasterSecret {
-    value: [u8; 32],
+impl AsMut<[u8]> for Digest {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.value.as_mut()
+    }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Nonce {
-    value: [u8; 32],
+    value: GenericArray<u8, U32>,
+}
+
+impl AsRef<[u8]> for Nonce {
+    fn as_ref(&self) -> &[u8] {
+        self.value.as_ref()
+    }
+}
+
+impl AsMut<[u8]> for Nonce {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.value.as_mut()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -247,7 +295,6 @@ pub(crate) struct Counter<'a>(PacketBuilder<'a>);
 pub(crate) struct DeriveKey<'a>(PacketBuilder<'a>);
 #[allow(dead_code)]
 pub(crate) struct Ecdh<'a>(PacketBuilder<'a>);
-/// Generate Digest
 pub(crate) struct GenDig<'a>(PacketBuilder<'a>);
 pub(crate) struct GenKey<'a>(PacketBuilder<'a>);
 #[allow(dead_code)]
@@ -263,9 +310,9 @@ pub(crate) struct NonceCtx<'a> {
 #[allow(dead_code)]
 pub(crate) struct Pause<'a>(PacketBuilder<'a>);
 
-// For best security, it is recommended that the `PrivWrite` command not be used,
-// and that private keys be internally generated from the RNG using the `GenKey`
-// command.
+// For best security, it is recommended that the `PrivWrite` command not be
+// used, and that private keys be internally generated from the RNG using the
+// `GenKey` command.
 pub(crate) struct PrivWrite<'a>(PacketBuilder<'a>);
 pub(crate) struct Random<'a>(PacketBuilder<'a>);
 pub(crate) struct Read<'a>(PacketBuilder<'a>);
@@ -302,11 +349,13 @@ impl<'a> GenDig<'a> {
 /// GenKey
 impl<'a> GenKey<'a> {
     // Config zone should be locked, otherwise GenKey always fails regardless of
-    // mode.
+    // a mode parameter.
     const MODE_PRIVATE: u8 = 0x04; // Private key generation
     const MODE_PUBLIC: u8 = 0x00; // Public key calculation
+    #[allow(dead_code)]
     const MODE_DIGEST: u8 = 0x08; // PubKey digest will be created after the public key is calculated
-    const MODE_PUBKEY_DIGEST: u8 = 0x10; // Calculate PubKey digest on the public key in KeyId
+    #[allow(dead_code)]
+    const MODE_PUBKEY_DIGEST: u8 = 0x10; // Calculate a digest on the public key
 
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
@@ -332,8 +381,9 @@ impl<'a> GenKey<'a> {
         Ok(packet)
     }
 }
+
 impl<'a> Info<'a> {
-    /// Info mode Revision
+    // Info mode Revision
     const MODE_REVISION: u8 = 0x00;
 
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
@@ -390,8 +440,6 @@ impl<'a> NonceCtx<'a> {
     const MODE_TARGET_MSGDIGBUF: u8 = 0x40; // Nonce mode: target is Message Digest Buffer
     const MODE_TARGET_ALTKEYBUF: u8 = 0x80; // Nonce mode: target is Alternate Key Buffer
 
-    // num_in, 32 or 64 bytes.
-
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         let counter = 0x4432;
         Self { builder, counter }
@@ -400,13 +448,13 @@ impl<'a> NonceCtx<'a> {
     // TODO: Usage of Nonce, especially its correct timing is not clear. In
     // `test/api_atcab/atca_tests_aes.c`, AES encryption/decryption assumes
     // nonce value is loaded to TempKey in advance.
-    pub(crate) fn nonce(&mut self) -> Result<Packet, Error> {
-        let data = &[self.counter as u8; 32];
+    pub(crate) fn message_digest_buffer(&mut self, msg: &Digest) -> Result<Packet, Error> {
+        let mode = Self::MODE_PASSTHROUGH | (Sel::MODE_TARGET_MSGDIGBUF & Self::MODE_TARGET_MASK);
         let packet = self
             .builder
             .opcode(OpCode::Nonce)
-            .mode(Self::MODE_PASSTHROUGH)
-            .pdu_data(data)
+            .mode(mode)
+            .pdu_data(msg)
             .build();
         Ok(packet)
     }
@@ -436,13 +484,14 @@ impl<'a> PrivWrite<'a> {
         key_id: Slot,
         private_key: &Block,
     ) -> Result<Packet, Error> {
-        // Input is an ECC private key consisting of padding 4 bytes, all 0s and 32
-        // byte integer.
-        let private_key_range = 4 .. Size::Block.len() + 4;
+        // Input is an ECC private key consisting of padding 4 bytes of all 0s
+        // and 32 byte integer.
+        let private_key_range = 4..Size::Block.len() + 4;
         let private_key_length = private_key_range.end;
-        let mac_range = private_key_length .. private_key_length + Size::Block.len();
+        let mac_range = private_key_length..private_key_length + Size::Block.len();
         let mac_length = mac_range.end;
-        self.0.packet_buffer()[private_key_range]
+        // Write the padding and private key to the PDU buffer directly.
+        self.0.pdu_buffer()[private_key_range]
             .as_mut()
             .copy_from_slice(private_key.as_ref());
         let packet = self
@@ -479,9 +528,9 @@ impl<'a> Sha<'a> {
         Ok(packet)
     }
 
-    /// Data length cannot exceed 64 bytes.
+    /// Data length should be exactly 64 bytes.
     pub(crate) fn update(&mut self, data: impl AsRef<[u8]>) -> Result<Packet, Error> {
-        if data.as_ref().len() >= 64 {
+        if data.as_ref().len() != 64 {
             return Err(ErrorKind::BadParam.into());
         }
 
@@ -575,7 +624,7 @@ impl<'a> Random<'a> {
         let packet = self
             .0
             .opcode(OpCode::Random)
-            // .mode(Self::MODE_SEED_UPDATE)
+            .mode(Self::MODE_SEED_UPDATE)
             .build();
         Ok(packet)
     }
@@ -610,14 +659,48 @@ impl<'a> Read<'a> {
 
 /// Sign
 impl<'a> Sign<'a> {
-    // uint8_t nonce_target = NONCE_MODE_TARGET_TEMPKEY;
-    // uint8_t sign_source = SIGN_MODE_SOURCE_TEMPKEY;
-    const NONCE_MODE_TARGET_MSGDIGBUF: u8 = 0; // nonce_target
-    const SIGN_MODE_SOURCE_MSGDIGBUF: u8 = 0; // sign_source
+    const SIGN_MODE_SOURCE_MSGDIGBUF: u8 = 0;
+    const SIGN_MODE_EXTERNAL: u8 = 0;
 
-    #[allow(dead_code)]
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
+    }
+
+    // Sign a 32-byte external message using the private key in the specified
+    // slot.
+    pub(crate) fn sign(&mut self, key_id: Slot) -> Result<Packet, Error> {
+        let mode = Self::SIGN_MODE_EXTERNAL | Self::SIGN_MODE_SOURCE_MSGDIGBUF;
+        let packet = self
+            .0
+            .opcode(OpCode::Sign)
+            .mode(mode)
+            .param2(key_id as u16)
+            .build();
+        Ok(packet)
+    }
+}
+
+/// Verify
+impl<'a> Verify<'a> {
+    const VERIFY_MODE_SOURCE_MSGDIGBUF: u8 = 0;
+    const VERIFY_MODE_STORED: u8 = 0;
+
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    // Verify a 32-byte external message using the private key in the specified
+    // slot.
+    pub(crate) fn verify(&mut self, key_id: Slot, signature: &Signature) -> Result<Packet, Error> {
+        let mode = Self::VERIFY_MODE_STORED | Self::VERIFY_MODE_SOURCE_MSGDIGBUF;
+        let packet = self
+            .0
+            .opcode(OpCode::Verify)
+            .mode(mode)
+            .param2(key_id as u16)
+            .pdu_data(signature)
+            .build();
+        Ok(packet)
     }
 }
 
@@ -706,5 +789,25 @@ mod tests {
         assert_eq!(packet[0x02], OpCode::GenKey as u8);
         assert_eq!(packet[0x03], 0x04);
         assert_eq!(packet[0x04..0x06], [0x01, 0x00]);
+    }
+
+    #[test]
+    fn privwrite() {
+        let buf = &mut [0x00u8; 0xff];
+        let mut data = Block::default();
+        data.as_mut()
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, v)| *v = i as u8);
+        let packet = PrivWrite::new(PacketBuilder::new(buf.as_mut()))
+            .write_private_key(Slot::PrivateKey01, &data)
+            .unwrap()
+            .buffer(buf.as_ref());
+        assert_eq!(packet[0x01], 0x4b);
+        assert_eq!(packet[0x02], OpCode::PrivWrite as u8);
+        assert_eq!(packet[0x03], 0x00);
+        assert_eq!(packet[0x04..0x06], [0x01, 0x00]);
+        assert_eq!(packet[0x06..0x0a], [0x00; 0x04]);
+        assert_eq!(packet[0x0a..0x2a].as_ref(), data.as_ref());
     }
 }

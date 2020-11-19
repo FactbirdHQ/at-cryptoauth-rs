@@ -30,7 +30,7 @@
 #![no_std]
 
 extern crate panic_semihosting;
-use at_cryptoauth::client::AtCaClient;
+use at_cryptoauth::AtCaClient;
 use core::fmt::Write;
 use cortex_m_rt::entry;
 use cortex_m_rt::exception;

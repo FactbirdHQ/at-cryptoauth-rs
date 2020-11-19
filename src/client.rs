@@ -1,20 +1,72 @@
 use super::clock_divider::ClockDivider;
 use super::command::{
-    self, Block, Digest, GenKey, Info, Lock, NonceCtx, PrivWrite, PublicKey, Random, Serial,
-    Signature, Word,
+    self, GenKey, Info, Lock, NonceCtx, PrivWrite, PublicKey, Random, Serial, Word,
 };
 use super::datalink::I2c;
 use super::error::{Error, ErrorKind};
 use super::memory::{CertificateRepr, Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder, Response};
 use super::tngtls::TrustAndGo;
+use super::{Block, Digest, Signature};
+use core::cell::RefCell;
+use core::convert::TryInto;
 use core::convert::{identity, TryFrom};
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
 use heapless::{consts, Vec};
 
-pub const PUBLIC_KEY: usize = 0x40;
+pub struct Verifier<'a, PHY, D>(RefCell<Verify<'a, PHY, D>>);
+
+impl<'a, PHY, D> From<Verify<'a, PHY, D>> for Verifier<'a, PHY, D> {
+    fn from(verify: Verify<'a, PHY, D>) -> Self {
+        Self(RefCell::new(verify))
+    }
+}
+
+impl<'a, PHY, D> signature::Verifier<Signature> for Verifier<'a, PHY, D>
+where
+    PHY: Read + Write,
+    <PHY as Read>::Error: Debug,
+    <PHY as Write>::Error: Debug,
+    D: DelayUs<u32>,
+{
+    fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
+        self.0
+            .borrow_mut()
+            .atca
+            .sha()
+            .digest(msg)
+            .and_then(|digest| self.0.borrow_mut().verify_digest(&digest, signature))
+            .map_err(|_| signature::Error::new())
+    }
+}
+
+pub struct Signer<'a, PHY, D>(RefCell<Sign<'a, PHY, D>>);
+
+impl<'a, PHY, D> From<Sign<'a, PHY, D>> for Signer<'a, PHY, D> {
+    fn from(sign: Sign<'a, PHY, D>) -> Self {
+        Self(RefCell::new(sign))
+    }
+}
+
+impl<'a, PHY, D> signature::Signer<Signature> for Signer<'a, PHY, D>
+where
+    PHY: Read + Write,
+    <PHY as Read>::Error: Debug,
+    <PHY as Write>::Error: Debug,
+    D: DelayUs<u32>,
+{
+    fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
+        self.0
+            .borrow_mut()
+            .atca
+            .sha()
+            .digest(msg)
+            .and_then(|digest| self.0.borrow_mut().sign_digest(&digest))
+            .map_err(|_| signature::Error::new())
+    }
+}
 
 pub struct AtCaClient<PHY, D> {
     i2c: I2c<PHY, D>,
@@ -75,8 +127,16 @@ where
         self.i2c.execute(&mut self.buffer, packet, exec_time)
     }
 
+    pub fn signer(&mut self, key_id: Slot) -> Signer<'_, PHY, D> {
+        self.sign(key_id).into()
+    }
+
+    pub fn verifier(&mut self, key_id: Slot) -> Verifier<'_, PHY, D> {
+        self.verify(key_id).into()
+    }
+
     pub fn tng(&mut self) -> Result<TrustAndGo<'_, PHY, D>, Error> {
-        TrustAndGo::try_from(self)
+        self.try_into()
     }
 
     pub fn sleep(&mut self) -> Result<(), Error> {
@@ -85,27 +145,24 @@ where
 
     pub fn info(&mut self) -> Result<Word, Error> {
         let packet = Info::new(self.packet_builder()).revision()?;
-        let response = self.execute(packet)?;
-        Word::try_from(response.as_ref())
+        self.execute(packet)?.as_ref().try_into()
     }
 
     pub fn random(&mut self) -> Result<Block, Error> {
         let packet = Random::new(self.packet_builder()).random()?;
-        let response = self.execute(packet)?;
-        Block::try_from(response.as_ref())
+        self.execute(packet)?.as_ref().try_into()
     }
 
-    // Nonce load
-    pub fn nonce(&mut self) -> Result<(), Error> {
-        let packet = NonceCtx::new(self.packet_builder()).nonce()?;
+    // Write to device's digest message buffer.
+    pub fn write_message_digest_buffer(&mut self, msg: &Digest) -> Result<(), Error> {
+        let packet = NonceCtx::new(self.packet_builder()).nonce(msg)?;
         self.execute(packet).map(drop)
     }
 
     // Create private key and output its public key.
     pub fn create_private_key(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
         let packet = GenKey::new(self.packet_builder()).private_key(key_id)?;
-        let response = self.execute(packet)?;
-        PublicKey::try_from(response.as_ref())
+        self.execute(packet)?.as_ref().try_into()
     }
 
     // Write private key.
@@ -117,10 +174,8 @@ where
 
     // Given a private key created and stored in advance, calculate its public key.
     pub fn generate_pubkey(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
-        let mut pubkey = [0x00u8; PUBLIC_KEY];
         let packet = GenKey::new(self.packet_builder()).public_key(key_id)?;
-        let response = self.execute(packet)?;
-        PublicKey::try_from(response.as_ref())
+        self.execute(packet)?.as_ref().try_into()
     }
 }
 
@@ -145,12 +200,11 @@ where
     pub fn serial_number(&mut self) -> Result<Serial, Error> {
         let packet =
             command::Read::new(self.atca.packet_builder()).read(Zone::Config, Size::Block, 0, 0)?;
-        let response = self.atca.execute(packet)?;
-        Serial::try_from(response.as_ref())
+        self.atca.execute(packet)?.as_ref().try_into()
     }
 
-    pub fn pubkey(&mut self, key_id: Slot) -> Result<[u8; PUBLIC_KEY], Error> {
-        let mut pubkey = [0x00u8; PUBLIC_KEY];
+    pub fn pubkey(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
+        let mut pubkey = PublicKey::default();
         CertificateRepr::new()
             .enumerate()
             .scan(0, |offset, (i, ranges)| {
@@ -160,7 +214,7 @@ where
                         let response = self.atca.execute(packet)?;
                         for range in ranges {
                             let dst = *offset..*offset + range.len();
-                            pubkey[dst].copy_from_slice(&response.as_ref()[range.clone()]);
+                            pubkey.as_mut()[dst].copy_from_slice(&response.as_ref()[range.clone()]);
                             *offset += range.len();
                         }
                         Ok(())
@@ -405,8 +459,17 @@ where
 
     // See digest::Update
     pub fn update(&mut self, data: impl AsRef<[u8]>) -> Result<(), Error> {
-        let packet = command::Sha::new(self.atca.packet_builder()).update(data)?;
-        self.atca.execute(packet).map(drop)
+        let mut buffer = Vec::<u8, consts::U64>::new();
+        let capacity = buffer.capacity();
+        data.as_ref().chunks(capacity).try_for_each(|chunk| {
+            buffer.clear();
+            buffer
+                .resize(capacity, 0x00u8)
+                .unwrap_or_else(|()| unreachable!("Input length equals to the current capacity."));
+            buffer[..chunk.len()].as_mut().copy_from_slice(chunk);
+            let packet = command::Sha::new(self.atca.packet_builder()).update(&buffer)?;
+            self.atca.execute(packet).map(drop)
+        })
     }
 
     pub fn chain(&mut self, data: impl AsRef<[u8]>) -> Result<&mut Self, Error> {
@@ -416,15 +479,13 @@ where
 
     pub fn finalize(&mut self) -> Result<Digest, Error> {
         let packet = command::Sha::new(self.atca.packet_builder()).end()?;
-        let response = self.atca.execute(packet)?;
-        Digest::try_from(response.as_ref())
+        self.atca.execute(packet)?.as_ref().try_into()
     }
 
     pub fn digest(&mut self, data: &[u8]) -> Result<Digest, Error> {
         self.init()?;
-        data.chunks(Size::Block.len())
-            .try_fold(self, |acc, chunk| acc.chain(chunk))
-            .and_then(|acc| acc.finalize())
+        self.update(data)?;
+        self.finalize()
     }
 }
 
@@ -442,11 +503,15 @@ where
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    pub fn sign_digest(&mut self, msg: &[u8]) -> Result<Signature, Error> {
-        let _ = msg;
-        let _ = self.atca;
-        let _ = self.key_id;
-        Err(ErrorKind::BadParam.into())
+    // Takes a 32-byte message to be signed, typically the SHA256 hash of the
+    // full message.
+    pub fn sign_digest(&mut self, digest: &Digest) -> Result<Signature, Error> {
+        // 1. Random value generation
+        // 2. Nonce load
+        self.atca.write_message_digest_buffer(digest)?;
+        // 3. Sign
+        let packet = command::Sign::new(self.atca.packet_builder()).sign(self.key_id)?;
+        self.atca.execute(packet)?.as_ref().try_into()
     }
 }
 
@@ -462,10 +527,14 @@ where
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    pub fn verify(&mut self, digest: impl AsRef<[u8]>) -> Result<Signature, Error> {
-        let _ = digest;
-        let _ = self.atca;
-        let _ = self.key_id;
-        Err(ErrorKind::BadParam.into())
+    // Takes a 32-byte message to be signed, typically the SHA256 hash of the
+    // full message and signature.
+    pub fn verify_digest(&mut self, digest: &Digest, signature: &Signature) -> Result<(), Error> {
+        // 1. Nonce load
+        self.atca.write_message_digest_buffer(digest)?;
+        // 2. Verify
+        let packet =
+            command::Verify::new(self.atca.packet_builder()).verify(self.key_id, signature)?;
+        self.atca.execute(packet).map(drop)
     }
 }

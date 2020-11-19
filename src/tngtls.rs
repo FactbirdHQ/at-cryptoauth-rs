@@ -7,14 +7,16 @@
 // being used with AES keys and commands. 7. X.509 Compressed Certificate
 // Storage.
 use super::client::{AtCaClient, Memory, Sha, Sign, Verify};
-use super::command::Signature;
+use super::command::{Digest, Signature};
 use super::error::Error;
 use super::memory::{Size, Slot, Zone};
-use core::cell::RefCell;
 use core::convert::TryFrom;
 use core::fmt::Debug;
+use digest::{FixedOutputDirty, Reset, Update};
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
+use generic_array::typenum::U32;
+use generic_array::GenericArray;
 
 pub const AUTH_PRIVATE_KEY: Slot = Slot::PrivateKey00;
 pub const SIGN_PRIVATE_KEY: Slot = Slot::PrivateKey01;
@@ -27,48 +29,43 @@ pub const DEVICE_CERTIFICATE: Slot = Slot::Certificate0a;
 pub const SIGNER_PUBLIC_KEY: Slot = Slot::Certificate0b;
 pub const SIGNER_CERTIFICATE: Slot = Slot::Certificate0c;
 
-pub struct Verifier<'a, PHY, D>(RefCell<Verify<'a, PHY, D>>);
+pub struct Hasher<'a, PHY, D>(Sha<'a, PHY, D>);
 
-impl<'a, PHY, D> From<Verify<'a, PHY, D>> for Verifier<'a, PHY, D> {
-    fn from(verify: Verify<'a, PHY, D>) -> Self {
-        Self(RefCell::new(verify))
+impl<'a, PHY, D> From<Sha<'a, PHY, D>> for Hasher<'a, PHY, D> {
+    fn from(sha: Sha<'a, PHY, D>) -> Self {
+        Self(sha)
     }
 }
 
-impl<'a, PHY, D> Verifier<'a, PHY, D>
+impl<'a, PHY, D> Update for Hasher<'a, PHY, D>
 where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    pub fn verify(&self, digest: impl AsRef<[u8]>) -> Result<Signature, Error> {
-        self.0.borrow_mut().verify(digest)
-    }
+    fn update(&mut self, data: impl AsRef<[u8]>) {}
 }
 
-pub struct Signer<'a, PHY, D>(RefCell<Sign<'a, PHY, D>>);
-
-impl<'a, PHY, D> From<Sign<'a, PHY, D>> for Signer<'a, PHY, D> {
-    fn from(sign: Sign<'a, PHY, D>) -> Self {
-        Self(RefCell::new(sign))
-    }
-}
-
-impl<'a, PHY, D> signature::Signer<Signature> for Signer<'a, PHY, D>
+impl<'a, PHY, D> FixedOutputDirty for Hasher<'a, PHY, D>
 where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
-        self.0
-            .borrow_mut()
-            // TODO: You should create a digest for the message first.
-            .sign_digest(msg)
-            .map_err(|_| signature::Error::new())
-    }
+    type OutputSize = U32;
+    fn finalize_into_dirty(&mut self, out: &mut GenericArray<u8, Self::OutputSize>) {}
+}
+
+impl<'a, PHY, D> Reset for Hasher<'a, PHY, D>
+where
+    PHY: Read + Write,
+    <PHY as Read>::Error: Debug,
+    <PHY as Write>::Error: Debug,
+    D: DelayUs<u32>,
+{
+    fn reset(&mut self) {}
 }
 
 pub struct TrustAndGo<'a, PHY, D> {
@@ -82,19 +79,10 @@ where
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    pub fn signer(&mut self) -> Signer<'_, PHY, D> {
-        self.atca.sign(SIGN_PRIVATE_KEY).into()
-    }
-
-    pub fn verifier(&mut self) -> Verifier<'_, PHY, D> {
-        self.atca.verify(SIGN_PRIVATE_KEY).into()
-    }
 }
 
-// TODO: Testing purpose only.
 impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
     // Miscellaneous device states.
-    // const TNG_TLS_SLOT_CONFIG_INDEX: usize = 20;
     const TNG_TLS_SLOT_CONFIG_DATA: [u8; Size::Block as usize] = [
         // Index 20..=51, block = 0, offset = 5
         0x85, 0x00, // Slot 0x00, Primary private key
@@ -111,13 +99,11 @@ impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
         0x00, 0x00, 0x00, 0x00, 0xaf, 0x8f, // Slot 0x0d, 0x0e and 0x0f, reserved.
     ];
 
-    // const TNG_TLS_CHIP_OPTIONS_INDEX: usize = 88;
     const TNG_TLS_CHIP_OPTIONS: [u8; Size::Word as usize] = [
         // Index 88..=91, block = 2, offset = 6
         0xff, 0xff, 0x60, 0x0e,
     ];
 
-    // const TNG_TLS_KEY_CONFIG_INDEX: usize = 96;
     const TNG_TLS_KEY_CONFIG_DATA: [u8; Size::Block as usize] = [
         // Index 96..=127, block = 3, offset = 0
         0x53, 0x00, // 0x00
@@ -133,10 +119,6 @@ impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
         0x1c, 0x00, // 0x0c
         0x3c, 0x00, 0x3c, 0x00, 0x1c, 0x00, // 0x0d, 0x0e and 0x0f, reserved.
     ];
-
-    pub fn new(atca: &'a mut AtCaClient<PHY, D>) -> Self {
-        Self { atca }
-    }
 }
 
 // Methods for preparing device state. Configuraion, random nonce and key creation and so on.
@@ -201,6 +183,8 @@ where
 
         // Check if data zone is locked.
         if !tng.atca.memory().is_locked(Zone::Data)? {
+            // Only lock the data zone for release build
+            #[cfg(not(debug_assertions))]
             tng.atca.memory().lock(Zone::Data)?;
         }
 
