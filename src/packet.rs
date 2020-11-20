@@ -162,7 +162,10 @@ impl<'a> Response<'a> {
 
         // Check CRC.
         let (payload, crc_bytes) = buffer.split_at(buffer.len() - size_of::<u16>());
-        let crc = u16::from_le_bytes(crc_bytes.try_into().unwrap_or_else(|_| unreachable!()));
+        let crc = crc_bytes
+            .try_into()
+            .map(u16::from_le_bytes)
+            .unwrap_or_else(|_| unreachable!());
         if crc != CRC16.checksum(&payload) {
             return Err(ErrorKind::RxCrcError.into());
         }

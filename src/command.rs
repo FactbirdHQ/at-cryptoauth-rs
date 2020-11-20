@@ -137,6 +137,12 @@ impl TryFrom<&[u8]> for Signature {
     }
 }
 
+impl signature::Signature for Signature {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, signature::Error> {
+        Self::try_from(bytes).map_err(|_| signature::Error::new())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PublicKey {
     value: GenericArray<u8, U64>,
@@ -167,12 +173,6 @@ impl TryFrom<&[u8]> for PublicKey {
     }
 }
 
-impl signature::Signature for Signature {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, signature::Error> {
-        Self::try_from(bytes).map_err(|_| signature::Error::new())
-    }
-}
-
 // A digest yielded from cryptographic hash functions. Merely a wrapper around
 // `GenericArray<u8, 32>` of `digest` crate.
 #[derive(Clone, Copy, Debug, Default)]
@@ -188,7 +188,7 @@ impl TryFrom<&[u8]> for Digest {
         }
 
         let mut value = Self::default();
-        value.as_mut().copy_from_slice(buffer.as_ref());
+        value.as_mut().copy_from_slice(buffer);
         Ok(value)
     }
 }
@@ -200,23 +200,6 @@ impl AsRef<[u8]> for Digest {
 }
 
 impl AsMut<[u8]> for Digest {
-    fn as_mut(&mut self) -> &mut [u8] {
-        self.value.as_mut()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Nonce {
-    value: GenericArray<u8, U32>,
-}
-
-impl AsRef<[u8]> for Nonce {
-    fn as_ref(&self) -> &[u8] {
-        self.value.as_ref()
-    }
-}
-
-impl AsMut<[u8]> for Nonce {
     fn as_mut(&mut self) -> &mut [u8] {
         self.value.as_mut()
     }
@@ -256,13 +239,11 @@ pub(crate) enum OpCode {
     /// Read command op-code
     Read = 0x02,
     /// Sign command op-code
-    #[allow(dead_code)]
     Sign = 0x41,
     /// UpdateExtra command op-code
     #[allow(dead_code)]
     UpdateExtra = 0x20,
     /// Verify command op-code
-    #[allow(dead_code)]
     Verify = 0x45,
     /// Write command op-code
     Write = 0x12,
@@ -305,6 +286,7 @@ pub(crate) struct Lock<'a>(PacketBuilder<'a>);
 pub(crate) struct Mac<'a>(PacketBuilder<'a>);
 pub(crate) struct NonceCtx<'a> {
     builder: PacketBuilder<'a>,
+    #[allow(dead_code)]
     counter: u32,
 }
 #[allow(dead_code)]
@@ -319,7 +301,6 @@ pub(crate) struct Read<'a>(PacketBuilder<'a>);
 pub(crate) struct Sign<'a>(PacketBuilder<'a>);
 #[allow(dead_code)]
 pub(crate) struct UpdateExtra<'a>(PacketBuilder<'a>);
-#[allow(dead_code)]
 pub(crate) struct Verify<'a>(PacketBuilder<'a>);
 pub(crate) struct Write<'a>(PacketBuilder<'a>);
 pub(crate) struct Sha<'a>(PacketBuilder<'a>);
@@ -427,17 +408,26 @@ impl<'a> Lock<'a> {
 
 /// Nonce
 impl<'a> NonceCtx<'a> {
+    #[allow(dead_code)]
     const MODE_MASK: u8 = 0x03; // Nonce mode bits 2 to 7 are 0.
+    #[allow(dead_code)]
     const MODE_SEED_UPDATE: u8 = 0x00; // Nonce mode: update seed
+    #[allow(dead_code)]
     const MODE_NO_SEED_UPDATE: u8 = 0x01; // Nonce mode: do not update seed
+    #[allow(dead_code)]
     const MODE_INVALID: u8 = 0x02; // Nonce mode 2 is invalid.
     const MODE_PASSTHROUGH: u8 = 0x03; // Nonce mode: pass-through
+    #[allow(dead_code)]
     const MODE_INPUT_LEN_MASK: u8 = 0x20; // Nonce mode: input size mask
+    #[allow(dead_code)]
     const MODE_INPUT_LEN_32: u8 = 0x00; // Nonce mode: input size is 32 bytes
+    #[allow(dead_code)]
     const MODE_INPUT_LEN_64: u8 = 0x20; // Nonce mode: input size is 64 bytes
     const MODE_TARGET_MASK: u8 = 0xc0; // Nonce mode: target mask
+    #[allow(dead_code)]
     const MODE_TARGET_TEMPKEY: u8 = 0x00; // Nonce mode: target is TempKey
     const MODE_TARGET_MSGDIGBUF: u8 = 0x40; // Nonce mode: target is Message Digest Buffer
+    #[allow(dead_code)]
     const MODE_TARGET_ALTKEYBUF: u8 = 0x80; // Nonce mode: target is Alternate Key Buffer
 
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
@@ -459,15 +449,22 @@ impl<'a> NonceCtx<'a> {
         Ok(packet)
     }
 
+    #[allow(dead_code)]
     fn load(&mut self) -> Self {
         unimplemented!()
     }
+
+    #[allow(dead_code)]
     fn rand(&mut self) -> Self {
         unimplemented!()
     }
+
+    #[allow(dead_code)]
     fn challenge(&mut self) -> Self {
         unimplemented!()
     }
+
+    #[allow(dead_code)]
     fn challenge_seed_update(&mut self) -> Self {
         unimplemented!()
     }
@@ -530,7 +527,8 @@ impl<'a> Sha<'a> {
 
     /// Data length should be exactly 64 bytes.
     pub(crate) fn update(&mut self, data: impl AsRef<[u8]>) -> Result<Packet, Error> {
-        if data.as_ref().len() != 64 {
+        let length = data.as_ref().len();
+        if length != 64 {
             return Err(ErrorKind::BadParam.into());
         }
 
@@ -538,17 +536,25 @@ impl<'a> Sha<'a> {
             .0
             .opcode(OpCode::Sha)
             .mode(Self::MODE_SHA256_UPDATE)
+            .param2(length as u16)
             .pdu_data(data)
             .build();
         Ok(packet)
     }
 
     /// Command execution will return a digest of Block size.
-    pub(crate) fn end(&mut self) -> Result<Packet, Error> {
+    pub(crate) fn end(&mut self, data: impl AsRef<[u8]>) -> Result<Packet, Error> {
+        let length = data.as_ref().len();
+        if length > 64 {
+            return Err(ErrorKind::BadParam.into());
+        }
+
         let packet = self
             .0
             .opcode(OpCode::Sha)
             .mode(Self::MODE_SHA256_END)
+            .param2(length as u16)
+            .pdu_data(data)
             .build();
         Ok(packet)
     }

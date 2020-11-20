@@ -33,6 +33,13 @@ const AES_KEY_CONTENT: [u8; 0x40] = [
     0x11, 0x44, 0x43, 0xFA, 0x8E, 0x96, 0x14, 0x84, 0x5E, 0xC7, 0x29, 0x6C, 0xD1, 0x3B, 0xC9, 0xDC,
 ];
 
+// SHA
+const MESSAGE_TO_HASH: [u8; 32 + 63] = [0xbc_u8; 32 + 63]; // just short of two blocks
+const DIGEST_OF_ANSWER: [u8; 32] = [
+    0xA9, 0x22, 0x18, 0x56, 0x43, 0x70, 0xA0, 0x57, 0x27, 0x3F, 0xF4, 0x85, 0xA8, 0x07, 0x3F, 0x32,
+    0xFC, 0x1F, 0x14, 0x12, 0xEC, 0xA2, 0xE3, 0x0B, 0x81, 0xA8, 0x87, 0x76, 0x0B, 0x61, 0x31, 0x72,
+];
+
 const PROVISION_KEYS: &[Slot] = &[AUTH_PRIVATE_KEY, SIGN_PRIVATE_KEY];
 
 const TEST_PRIVATE_KEY: [u8; 32] = [
@@ -96,6 +103,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
             .map_err(|e| format!("{}", e))?;
     }
+
+    // SHA
+    let digest = atca
+        .sha()
+        .digest(&MESSAGE_TO_HASH)
+        .map_err(|e| format!("{}", e))?;
+    assert_eq!(digest.as_ref(), &DIGEST_OF_ANSWER);
 
     // Chip options
     let chip_options = atca.memory().chip_options().map_err(|e| format!("{}", e))?;

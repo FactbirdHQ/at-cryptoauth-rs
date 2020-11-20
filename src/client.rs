@@ -32,12 +32,16 @@ where
     D: DelayUs<u32>,
 {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
-        self.0
+        let digest = self
+            .0
             .borrow_mut()
             .atca
             .sha()
             .digest(msg)
-            .and_then(|digest| self.0.borrow_mut().verify_digest(&digest, signature))
+            .map_err(|_| signature::Error::new())?;
+        self.0
+            .borrow_mut()
+            .verify_digest(&digest, signature)
             .map_err(|_| signature::Error::new())
     }
 }
@@ -58,12 +62,16 @@ where
     D: DelayUs<u32>,
 {
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
-        self.0
+        let digest = self
+            .0
             .borrow_mut()
             .atca
             .sha()
             .digest(msg)
-            .and_then(|digest| self.0.borrow_mut().sign_digest(&digest))
+            .map_err(|_| signature::Error::new())?;
+        self.0
+            .borrow_mut()
+            .sign_digest(&digest)
             .map_err(|_| signature::Error::new())
     }
 }
@@ -103,7 +111,11 @@ impl<PHY, D> AtCaClient<PHY, D> {
     }
 
     pub fn sha(&mut self) -> Sha<'_, PHY, D> {
-        Sha { atca: self }
+        let remaining_bytes = Vec::new();
+        Sha {
+            atca: self,
+            remaining_bytes,
+        }
     }
 
     pub fn sign(&mut self, key_id: Slot) -> Sign<'_, PHY, D> {
@@ -265,7 +277,10 @@ where
             command::Read::new(self.atca.packet_builder()).read(zone, size, block, word_offset)?;
         let response = self.atca.execute(packet)?;
         let word = Word::try_from(response.as_ref())?;
-        let slot_locked_bytes = u16::from_le_bytes([word.as_ref()[0], word.as_ref()[1]]);
+        let slot_locked_bytes = word.as_ref()[0..1]
+            .try_into()
+            .map(u16::from_le_bytes)
+            .unwrap_or_else(|_| unreachable!());
         Ok(slot_locked_bytes & (0x01u16 << slot as u32) == 0x00)
     }
 
@@ -300,24 +315,36 @@ where
 
     pub fn chip_options(&mut self) -> Result<u16, Error> {
         let (block, offset, pos) = Zone::locate_index(Self::CHIP_OPTIONS_INDEX);
+        let range = pos as usize..pos as usize + 2;
         self.read_config(Size::Word, block, offset).map(|resp| {
-            u16::from_le_bytes([resp.as_ref()[pos as usize], resp.as_ref()[pos as usize + 1]])
+            resp.as_ref()[range]
+                .try_into()
+                .map(u16::from_le_bytes)
+                .unwrap_or_else(|_| unreachable!());
         })
     }
 
     pub fn permission(&mut self, slot: Slot) -> Result<u16, Error> {
         let index = Self::SLOT_CONFIG_INDEX + (slot as usize * 2);
         let (block, offset, pos) = Zone::locate_index(index);
+        let range = pos as usize..pos as usize + 2;
         self.read_config(Size::Word, block, offset).map(|resp| {
-            u16::from_le_bytes([resp.as_ref()[pos as usize], resp.as_ref()[pos as usize + 1]])
+            resp.as_ref()[range]
+                .try_into()
+                .map(u16::from_le_bytes)
+                .unwrap_or_else(|_| unreachable!());
         })
     }
 
     pub fn key_type(&mut self, slot: Slot) -> Result<u16, Error> {
         let index = Self::KEY_CONFIG_INDEX + (slot as usize * 2);
         let (block, offset, pos) = Zone::locate_index(index);
+        let range = pos as usize..pos as usize + 2;
         self.read_config(Size::Word, block, offset).map(|resp| {
-            u16::from_le_bytes([resp.as_ref()[pos as usize], resp.as_ref()[pos as usize + 1]])
+            resp.as_ref()[range]
+                .try_into()
+                .map(u16::from_le_bytes)
+                .unwrap_or_else(|_| unreachable!());
         })
     }
 
@@ -422,27 +449,10 @@ where
     }
 }
 
-// Implementation design inspired by digest crate.
-// Not directly applicable because the trait won't allow any member methods to be fallible.
-// Moreover, `digest` requires the client stored in a global static variable.
-//
-// use digest::{Digest, Output};
-// use heapless::consts::U32;
-//
-// impl Digest for Sha {
-//     type OutputSize = U32;
-//     fn new() -> Self { unimplemented!() }
-//     fn update(&mut self, data: impl AsRef<[u8]>) { unimplemented!() }
-//     fn chain(self, data: impl AsRef<[u8]>) -> Self { unimplemented!() }
-//     fn finalize(self) -> Output<Self> { unimplemented!() }
-//     fn finalize_reset(&mut self) -> Output<Self> { unimplemented!() }
-//     fn reset(&mut self) { unimplemented!() }
-//     fn output_size() -> usize { unimplemented!() }
-//     fn digest(data: &[u8]) -> Output<Self> { unimplemented!() }
-// }
 // SHA
 pub struct Sha<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
+    remaining_bytes: Vec<u8, consts::U64>,
 }
 
 impl<'a, PHY, D> Sha<'a, PHY, D>
@@ -459,15 +469,17 @@ where
 
     // See digest::Update
     pub fn update(&mut self, data: impl AsRef<[u8]>) -> Result<(), Error> {
-        let mut buffer = Vec::<u8, consts::U64>::new();
-        let capacity = buffer.capacity();
-        data.as_ref().chunks(capacity).try_for_each(|chunk| {
-            buffer.clear();
-            buffer
-                .resize(capacity, 0x00u8)
-                .unwrap_or_else(|()| unreachable!("Input length equals to the current capacity."));
-            buffer[..chunk.len()].as_mut().copy_from_slice(chunk);
-            let packet = command::Sha::new(self.atca.packet_builder()).update(&buffer)?;
+        let capacity = 0x40;
+        let length = data.as_ref().len();
+
+        // Store remainging bytes for later processing
+        let remainder_length = data.as_ref().len() % capacity;
+        let (bytes, remainder) = data.as_ref().split_at(length - remainder_length);
+        self.remaining_bytes.extend(remainder);
+
+        // Execute update command
+        bytes.chunks(capacity).try_for_each(|chunk| {
+            let packet = command::Sha::new(self.atca.packet_builder()).update(chunk)?;
             self.atca.execute(packet).map(drop)
         })
     }
@@ -478,7 +490,7 @@ where
     }
 
     pub fn finalize(&mut self) -> Result<Digest, Error> {
-        let packet = command::Sha::new(self.atca.packet_builder()).end()?;
+        let packet = command::Sha::new(self.atca.packet_builder()).end(&self.remaining_bytes)?;
         self.atca.execute(packet)?.as_ref().try_into()
     }
 

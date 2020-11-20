@@ -6,8 +6,7 @@
 // Signer public key from signer certificate. 6. ECDH/KDF key slot capable of
 // being used with AES keys and commands. 7. X.509 Compressed Certificate
 // Storage.
-use super::client::{AtCaClient, Memory, Sha, Sign, Verify};
-use super::command::{Digest, Signature};
+use super::client::{AtCaClient, Memory, Sha};
 use super::error::Error;
 use super::memory::{Size, Slot, Zone};
 use core::convert::TryFrom;
@@ -30,10 +29,21 @@ pub const SIGNER_PUBLIC_KEY: Slot = Slot::Certificate0b;
 pub const SIGNER_CERTIFICATE: Slot = Slot::Certificate0c;
 
 pub struct Hasher<'a, PHY, D>(Sha<'a, PHY, D>);
-
 impl<'a, PHY, D> From<Sha<'a, PHY, D>> for Hasher<'a, PHY, D> {
     fn from(sha: Sha<'a, PHY, D>) -> Self {
         Self(sha)
+    }
+}
+
+impl<'a, PHY, D> Clone for Hasher<'a, PHY, D> {
+    fn clone(&self) -> Self {
+        unimplemented!()
+    }
+}
+
+impl<'a, PHY, D> Default for Hasher<'a, PHY, D> {
+    fn default() -> Self {
+        unimplemented!()
     }
 }
 
@@ -44,7 +54,9 @@ where
     <PHY as Write>::Error: Debug,
     D: DelayUs<u32>,
 {
-    fn update(&mut self, data: impl AsRef<[u8]>) {}
+    fn update(&mut self, data: impl AsRef<[u8]>) {
+        self.0.update(data).expect("update operation failed");
+    }
 }
 
 impl<'a, PHY, D> FixedOutputDirty for Hasher<'a, PHY, D>
@@ -55,7 +67,10 @@ where
     D: DelayUs<u32>,
 {
     type OutputSize = U32;
-    fn finalize_into_dirty(&mut self, out: &mut GenericArray<u8, Self::OutputSize>) {}
+    fn finalize_into_dirty(&mut self, out: &mut GenericArray<u8, Self::OutputSize>) {
+        let digest = self.0.finalize().expect("finalize operation failed");
+        out.as_mut_slice().copy_from_slice(digest.as_ref());
+    }
 }
 
 impl<'a, PHY, D> Reset for Hasher<'a, PHY, D>
@@ -70,15 +85,6 @@ where
 
 pub struct TrustAndGo<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
-}
-
-impl<'a, PHY, D> TrustAndGo<'a, PHY, D>
-where
-    PHY: Read + Write,
-    <PHY as Read>::Error: Debug,
-    <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
-{
 }
 
 impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
@@ -307,13 +313,21 @@ mod tests {
     fn permission(key_id: Slot) -> u16 {
         let data = &TrustAndGo::<(), ()>::TNG_TLS_SLOT_CONFIG_DATA;
         let index = key_id as usize * 2;
-        u16::from_le_bytes([data[index], data[index + 1]])
+        let range = index..index + 2;
+        data[range]
+            .try_into()
+            .map(u16::from_le_bytes)
+            .unwrap_or_else(|_| unreachable!());
     }
 
     fn key_config(key_id: Slot) -> u16 {
         let data = &TrustAndGo::<(), ()>::TNG_TLS_KEY_CONFIG_DATA;
         let index = key_id as usize * 2;
-        u16::from_le_bytes([data[index], data[index + 1]])
+        let range = index..index + 2;
+        data[range]
+            .try_into()
+            .map(u16::from_le_bytes)
+            .unwrap_or_else(|_| unreachable!());
     }
 
     // ECC private keys can never be written with the Write and/or DeriveKey
