@@ -7,14 +7,13 @@ use core::convert::TryFrom;
 use generic_array::typenum::{U32, U4, U64, U9};
 use generic_array::GenericArray;
 
-/// Revision number and so on.
-/// A return type of API `info`.
+// Encapsulates raw 4 bytes. When it is a return value of `info`, it contains
+// the device's revision number.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Word {
     value: GenericArray<u8, U4>,
 }
 
-// Parse a word from response buffer.
 impl TryFrom<&[u8]> for Word {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
@@ -40,8 +39,7 @@ impl AsMut<[u8]> for Word {
     }
 }
 
-/// What's this?
-/// A return type of which API?
+// Encapsulates raw 32 bytes.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Block {
     value: GenericArray<u8, U32>,
@@ -72,14 +70,13 @@ impl AsMut<[u8]> for Block {
     }
 }
 
-/// Serial number of 9 bytes. Its uniqueness is guaranteed.
-/// A return type of API `read_serial`.
+// Represents a serial number consisting of 9 bytes. Its uniqueness is
+// guaranteed. A return type of API `read_serial`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Serial {
     value: GenericArray<u8, U9>,
 }
 
-// Parse a serial number from response buffer.
 impl TryFrom<&[u8]> for Serial {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
@@ -176,14 +173,13 @@ impl signature::Signature for Signature {
     }
 }
 
-// A digest yielded from cryptographic hash functions.
-// For reference, `digest` crate uses `GenericArray<u8, 32>`.
+// A digest yielded from cryptographic hash functions. Merely a wrapper around
+// `GenericArray<u8, 32>` of `digest` crate.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Digest {
     value: GenericArray<u8, U32>,
 }
 
-// Parse digest from response buffer.
 impl TryFrom<&[u8]> for Digest {
     type Error = Error;
     fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
@@ -299,7 +295,6 @@ pub(crate) struct Counter<'a>(PacketBuilder<'a>);
 pub(crate) struct DeriveKey<'a>(PacketBuilder<'a>);
 #[allow(dead_code)]
 pub(crate) struct Ecdh<'a>(PacketBuilder<'a>);
-/// Generate Digest
 pub(crate) struct GenDig<'a>(PacketBuilder<'a>);
 pub(crate) struct GenKey<'a>(PacketBuilder<'a>);
 #[allow(dead_code)]
@@ -315,9 +310,9 @@ pub(crate) struct NonceCtx<'a> {
 #[allow(dead_code)]
 pub(crate) struct Pause<'a>(PacketBuilder<'a>);
 
-// For best security, it is recommended that the `PrivWrite` command not be used,
-// and that private keys be internally generated from the RNG using the `GenKey`
-// command.
+// For best security, it is recommended that the `PrivWrite` command not be
+// used, and that private keys be internally generated from the RNG using the
+// `GenKey` command.
 pub(crate) struct PrivWrite<'a>(PacketBuilder<'a>);
 pub(crate) struct Random<'a>(PacketBuilder<'a>);
 pub(crate) struct Read<'a>(PacketBuilder<'a>);
@@ -354,13 +349,13 @@ impl<'a> GenDig<'a> {
 /// GenKey
 impl<'a> GenKey<'a> {
     // Config zone should be locked, otherwise GenKey always fails regardless of
-    // mode.
+    // a mode parameter.
     const MODE_PRIVATE: u8 = 0x04; // Private key generation
     const MODE_PUBLIC: u8 = 0x00; // Public key calculation
     #[allow(dead_code)]
     const MODE_DIGEST: u8 = 0x08; // PubKey digest will be created after the public key is calculated
     #[allow(dead_code)]
-    const MODE_PUBKEY_DIGEST: u8 = 0x10; // Calculate PubKey digest on the public key in KeyId
+    const MODE_PUBKEY_DIGEST: u8 = 0x10; // Calculate a digest on the public key
 
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
@@ -388,7 +383,7 @@ impl<'a> GenKey<'a> {
 }
 
 impl<'a> Info<'a> {
-    /// Info mode Revision
+    // Info mode Revision
     const MODE_REVISION: u8 = 0x00;
 
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
@@ -445,8 +440,6 @@ impl<'a> NonceCtx<'a> {
     const MODE_TARGET_MSGDIGBUF: u8 = 0x40; // Nonce mode: target is Message Digest Buffer
     const MODE_TARGET_ALTKEYBUF: u8 = 0x80; // Nonce mode: target is Alternate Key Buffer
 
-    // num_in, 32 or 64 bytes.
-
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         let counter = 0x4432;
         Self { builder, counter }
@@ -455,13 +448,13 @@ impl<'a> NonceCtx<'a> {
     // TODO: Usage of Nonce, especially its correct timing is not clear. In
     // `test/api_atcab/atca_tests_aes.c`, AES encryption/decryption assumes
     // nonce value is loaded to TempKey in advance.
-    pub(crate) fn nonce(&mut self) -> Result<Packet, Error> {
-        let data = &[self.counter as u8; 32];
+    pub(crate) fn message_digest_buffer(&mut self, msg: &Digest) -> Result<Packet, Error> {
+        let mode = Self::MODE_PASSTHROUGH | (Self::MODE_TARGET_MSGDIGBUF & Self::MODE_TARGET_MASK);
         let packet = self
             .builder
             .opcode(OpCode::Nonce)
-            .mode(Self::MODE_PASSTHROUGH)
-            .pdu_data(data)
+            .mode(mode)
+            .pdu_data(msg)
             .build();
         Ok(packet)
     }
@@ -491,8 +484,8 @@ impl<'a> PrivWrite<'a> {
         key_id: Slot,
         private_key: &Block,
     ) -> Result<Packet, Error> {
-        // Input is an ECC private key consisting of padding 4 bytes, all 0s and 32
-        // byte integer.
+        // Input is an ECC private key consisting of padding 4 bytes of all 0s
+        // and 32 byte integer.
         let private_key_range = 4..Size::Block.len() + 4;
         let private_key_length = private_key_range.end;
         let mac_range = private_key_length..private_key_length + Size::Block.len();
@@ -535,9 +528,9 @@ impl<'a> Sha<'a> {
         Ok(packet)
     }
 
-    /// Data length cannot exceed 64 bytes.
+    /// Data length should be exactly 64 bytes.
     pub(crate) fn update(&mut self, data: impl AsRef<[u8]>) -> Result<Packet, Error> {
-        if data.as_ref().len() >= 64 {
+        if data.as_ref().len() != 64 {
             return Err(ErrorKind::BadParam.into());
         }
 
@@ -666,22 +659,48 @@ impl<'a> Read<'a> {
 
 /// Sign
 impl<'a> Sign<'a> {
-    // uint8_t nonce_target = NONCE_MODE_TARGET_TEMPKEY;
-    // uint8_t sign_source = SIGN_MODE_SOURCE_TEMPKEY;
-    const NONCE_MODE_TARGET_MSGDIGBUF: u8 = 0; // nonce_target
-    const SIGN_MODE_SOURCE_MSGDIGBUF: u8 = 0; // sign_source
+    const SIGN_MODE_SOURCE_MSGDIGBUF: u8 = 0;
     const SIGN_MODE_EXTERNAL: u8 = 0;
 
-    #[allow(dead_code)]
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
     }
 
     // Sign a 32-byte external message using the private key in the specified
     // slot.
-    pub(crate) fn sign(&mut self, key_id: Slot, msg: &Block) -> Result<Packet, Error> {
-        let mode = 0x00;
-        unimplemented!();
+    pub(crate) fn sign(&mut self, key_id: Slot) -> Result<Packet, Error> {
+        let mode = Self::SIGN_MODE_EXTERNAL | Self::SIGN_MODE_SOURCE_MSGDIGBUF;
+        let packet = self
+            .0
+            .opcode(OpCode::Sign)
+            .mode(mode)
+            .param2(key_id as u16)
+            .build();
+        Ok(packet)
+    }
+}
+
+/// Verify
+impl<'a> Verify<'a> {
+    const VERIFY_MODE_SOURCE_MSGDIGBUF: u8 = 0;
+    const VERIFY_MODE_STORED: u8 = 0;
+
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    // Verify a 32-byte external message using the private key in the specified
+    // slot.
+    pub(crate) fn verify(&mut self, key_id: Slot, signature: &Signature) -> Result<Packet, Error> {
+        let mode = Self::VERIFY_MODE_STORED | Self::VERIFY_MODE_SOURCE_MSGDIGBUF;
+        let packet = self
+            .0
+            .opcode(OpCode::Verify)
+            .mode(mode)
+            .param2(key_id as u16)
+            .pdu_data(signature)
+            .build();
+        Ok(packet)
     }
 }
 

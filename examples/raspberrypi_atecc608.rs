@@ -7,7 +7,7 @@
 //
 // $ ssh pi@${PI_IP_ADDR} "RUST_LOG=info ./raspberrypi_atecc608"
 use at_cryptoauth::memory::{Size, Slot, Zone};
-use at_cryptoauth::tngtls::{TrustAndGo, AES_KEY, AUTH_PRIVATE_KEY, SIGN_PRIVATE_KEY};
+use at_cryptoauth::tngtls::{AES_KEY, AUTH_PRIVATE_KEY, SIGN_PRIVATE_KEY};
 use at_cryptoauth::{AtCaClient, Block};
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
@@ -128,26 +128,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Lock config zone
-    if !atca
-        .memory()
-        .is_locked(Zone::Config)
-        .map_err(|e| format!("{}", e))?
-    {
-        let mut tng = TrustAndGo::new(&mut atca);
-        tng.configure_chip_options().map_err(|e| format!("{}", e))?;
-        tng.configure_permissions().map_err(|e| format!("{}", e))?;
-        tng.configure_key_types().map_err(|e| format!("{}", e))?;
-        atca.memory()
-            .lock(Zone::Config)
-            .map(|response| info!("Config zone is locked"))
-            .map_err(|e| format!("{}", e))?;
-    }
-
-    // Nonce is required
-    atca.nonce()
-        .map(|response| info!("Nonce is calculated"))
-        .map_err(|e| format!("{}", e))?;
+    // Enforce TrustAndGo device config and lock config zone
+    atca.tng().map_err(|e| format!("{}", e))?;
 
     // Leave data zone unloced.
     // Write AES key to AES_KEY slot
