@@ -39,9 +39,16 @@ where
             .sha()
             .digest(msg)
             .map_err(|_| signature::Error::new())?;
+        let key_id = self.0.borrow_mut().key_id.clone();
+        let public_key = self
+            .0
+            .borrow_mut()
+            .atca
+            .generate_pubkey(key_id)
+            .map_err(|_| signature::Error::new())?;
         self.0
             .borrow_mut()
-            .verify_digest(&digest, signature)
+            .verify_digest(&digest, signature, &public_key)
             .map_err(|_| signature::Error::new())
     }
 }
@@ -277,7 +284,7 @@ where
             command::Read::new(self.atca.packet_builder()).read(zone, size, block, word_offset)?;
         let response = self.atca.execute(packet)?;
         let word = Word::try_from(response.as_ref())?;
-        let slot_locked_bytes = word.as_ref()[0..1]
+        let slot_locked_bytes = word.as_ref()[..2]
             .try_into()
             .map(u16::from_le_bytes)
             .unwrap_or_else(|_| unreachable!());
@@ -320,7 +327,7 @@ where
             resp.as_ref()[range]
                 .try_into()
                 .map(u16::from_le_bytes)
-                .unwrap_or_else(|_| unreachable!());
+                .unwrap_or_else(|_| unreachable!())
         })
     }
 
@@ -332,7 +339,7 @@ where
             resp.as_ref()[range]
                 .try_into()
                 .map(u16::from_le_bytes)
-                .unwrap_or_else(|_| unreachable!());
+                .unwrap_or_else(|_| unreachable!())
         })
     }
 
@@ -344,7 +351,7 @@ where
             resp.as_ref()[range]
                 .try_into()
                 .map(u16::from_le_bytes)
-                .unwrap_or_else(|_| unreachable!());
+                .unwrap_or_else(|_| unreachable!())
         })
     }
 
@@ -397,24 +404,24 @@ where
     D: DelayUs<u32>,
 {
     pub fn encrypt(&mut self, plaintext: &[u8], ciphertext: &mut [u8]) -> Result<(), Error> {
-        let block_size = Size::Block.len();
+        use command::Aes as AesCmd;
+
         if plaintext.len() != ciphertext.len() {
             return Err(ErrorKind::BadParam.into());
         }
 
         for (plain, cipher) in plaintext
-            .chunks(block_size)
-            .zip(ciphertext.chunks_mut(block_size))
+            .chunks(AesCmd::DATA_SIZE)
+            .zip(ciphertext.chunks_mut(AesCmd::DATA_SIZE))
         {
             // Input length should be exactly 16 bytes. Otherwise the device
             // couldn't recognize the command properly. If the length is not
             // enough, sufficient number of 0s are padded.
-            let packet =
-                command::Aes::new(self.atca.packet_builder()).encrypt(self.key_id, plain)?;
+            let packet = AesCmd::new(self.atca.packet_builder()).encrypt(self.key_id, plain)?;
 
             // Encrypt plain bytes and write the result to cipher.
             let response = self.atca.execute(packet)?;
-            if response.as_ref().len() != 16 {
+            if response.as_ref().len() != AesCmd::DATA_SIZE {
                 return Err(ErrorKind::InvalidSize.into());
             }
             cipher.copy_from_slice(response.as_ref());
@@ -423,24 +430,24 @@ where
     }
 
     pub fn decrypt(&mut self, ciphertext: &[u8], plaintext: &mut [u8]) -> Result<(), Error> {
-        let block_size = Size::Block.len();
+        use command::Aes as AesCmd;
+
         if ciphertext.len() != plaintext.len() {
             return Err(ErrorKind::BadParam.into());
         }
 
         for (cipher, plain) in ciphertext
-            .chunks(block_size)
-            .zip(plaintext.chunks_mut(block_size))
+            .chunks(AesCmd::DATA_SIZE)
+            .zip(plaintext.chunks_mut(AesCmd::DATA_SIZE))
         {
             // Input length should be exactly 16 bytes. Otherwise the device
             // couldn't recognize the command properly. If the length is not
             // enough, sufficient number of 0s are padded.
-            let packet =
-                command::Aes::new(self.atca.packet_builder()).decrypt(self.key_id, cipher)?;
+            let packet = AesCmd::new(self.atca.packet_builder()).decrypt(self.key_id, cipher)?;
 
             // Decrypt cipher bytes and write the result to plain.
             let response = self.atca.execute(packet)?;
-            if response.as_ref().len() != 16 {
+            if response.as_ref().len() != AesCmd::DATA_SIZE {
                 return Err(ErrorKind::InvalidSize.into());
             }
             plain.copy_from_slice(response.as_ref());
@@ -485,6 +492,10 @@ where
     }
 
     pub fn chain(&mut self, data: impl AsRef<[u8]>) -> Result<&mut Self, Error> {
+        if self.remaining_bytes.len() != 0 {
+            // TODO: Concatinate remaining bytes and input data.
+        }
+
         self.update(data)?;
         Ok(self)
     }
@@ -519,10 +530,11 @@ where
     // full message.
     pub fn sign_digest(&mut self, digest: &Digest) -> Result<Signature, Error> {
         // 1. Random value generation
+        self.atca.random()?;
         // 2. Nonce load
         self.atca.write_message_digest_buffer(digest)?;
         // 3. Sign
-        let packet = command::Sign::new(self.atca.packet_builder()).sign(self.key_id)?;
+        let packet = command::Sign::new(self.atca.packet_builder()).external(self.key_id)?;
         self.atca.execute(packet)?.as_ref().try_into()
     }
 }
@@ -541,12 +553,17 @@ where
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message and signature.
-    pub fn verify_digest(&mut self, digest: &Digest, signature: &Signature) -> Result<(), Error> {
+    pub fn verify_digest(
+        &mut self,
+        digest: &Digest,
+        signature: &Signature,
+        public_key: &PublicKey,
+    ) -> Result<(), Error> {
         // 1. Nonce load
         self.atca.write_message_digest_buffer(digest)?;
         // 2. Verify
         let packet =
-            command::Verify::new(self.atca.packet_builder()).verify(self.key_id, signature)?;
+            command::Verify::new(self.atca.packet_builder()).external(signature, public_key)?;
         self.atca.execute(packet).map(drop)
     }
 }

@@ -202,6 +202,7 @@ where
 mod tests {
     use super::*;
     use crate::command::OpCode;
+    use core::convert::TryInto;
     use core::ops::Deref;
     use heapless::consts::U5;
     use heapless::Vec;
@@ -317,7 +318,7 @@ mod tests {
         data[range]
             .try_into()
             .map(u16::from_le_bytes)
-            .unwrap_or_else(|_| unreachable!());
+            .unwrap_or_else(|_| unreachable!())
     }
 
     fn key_config(key_id: Slot) -> u16 {
@@ -327,7 +328,7 @@ mod tests {
         data[range]
             .try_into()
             .map(u16::from_le_bytes)
-            .unwrap_or_else(|_| unreachable!());
+            .unwrap_or_else(|_| unreachable!())
     }
 
     // ECC private keys can never be written with the Write and/or DeriveKey

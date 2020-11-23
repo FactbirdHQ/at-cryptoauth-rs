@@ -562,6 +562,7 @@ impl<'a> Sha<'a> {
 
 /// AES
 impl<'a> Aes<'a> {
+    pub(crate) const DATA_SIZE: usize = 0x10;
     /// AES mode: Encrypt
     const MODE_ENCRYPT: u8 = 0x00;
     /// AES mode: Decrypt
@@ -579,7 +580,7 @@ impl<'a> Aes<'a> {
 
         // Input length should be exactly 16 bytes. Otherwise the device
         // couldn't recognize the command properly.
-        if plaintext.len() > 16 {
+        if plaintext.len() != Self::DATA_SIZE {
             return Err(ErrorKind::InvalidSize.into());
         }
 
@@ -589,7 +590,6 @@ impl<'a> Aes<'a> {
             .mode(Self::MODE_ENCRYPT)
             .param2(slot as u16)
             .pdu_data(plaintext)
-            .pdu_length(16)
             .build();
         Ok(packet)
     }
@@ -602,7 +602,7 @@ impl<'a> Aes<'a> {
 
         // Input length should be exactly 16 bytes. Otherwise the device
         // couldn't recognize the command properly.
-        if ciphertext.len() != 16 as usize {
+        if ciphertext.len() != Self::DATA_SIZE {
             return Err(ErrorKind::InvalidSize.into());
         }
 
@@ -612,7 +612,6 @@ impl<'a> Aes<'a> {
             .mode(Self::MODE_DECRYPT)
             .param2(slot as u16)
             .pdu_data(ciphertext)
-            .pdu_length(16)
             .build();
         Ok(packet)
     }
@@ -665,8 +664,8 @@ impl<'a> Read<'a> {
 
 /// Sign
 impl<'a> Sign<'a> {
-    const SIGN_MODE_SOURCE_MSGDIGBUF: u8 = 0;
-    const SIGN_MODE_EXTERNAL: u8 = 0;
+    const MODE_SOURCE_MSGDIGBUF: u8 = 0x20;
+    const MODE_EXTERNAL: u8 = 0x80;
 
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
@@ -674,8 +673,8 @@ impl<'a> Sign<'a> {
 
     // Sign a 32-byte external message using the private key in the specified
     // slot.
-    pub(crate) fn sign(&mut self, key_id: Slot) -> Result<Packet, Error> {
-        let mode = Self::SIGN_MODE_EXTERNAL | Self::SIGN_MODE_SOURCE_MSGDIGBUF;
+    pub(crate) fn external(&mut self, key_id: Slot) -> Result<Packet, Error> {
+        let mode = Self::MODE_EXTERNAL | Self::MODE_SOURCE_MSGDIGBUF;
         let packet = self
             .0
             .opcode(OpCode::Sign)
@@ -688,8 +687,9 @@ impl<'a> Sign<'a> {
 
 /// Verify
 impl<'a> Verify<'a> {
-    const VERIFY_MODE_SOURCE_MSGDIGBUF: u8 = 0;
-    const VERIFY_MODE_STORED: u8 = 0;
+    const MODE_SOURCE_MSGDIGBUF: u8 = 0x20;
+    const MODE_EXTERNAL: u8 = 0x02;
+    const KEY_P256: u16 = 0x0004;
 
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
@@ -697,14 +697,27 @@ impl<'a> Verify<'a> {
 
     // Verify a 32-byte external message using the private key in the specified
     // slot.
-    pub(crate) fn verify(&mut self, key_id: Slot, signature: &Signature) -> Result<Packet, Error> {
-        let mode = Self::VERIFY_MODE_STORED | Self::VERIFY_MODE_SOURCE_MSGDIGBUF;
+    pub(crate) fn external(
+        &mut self,
+        signature: &Signature,
+        public_key: &PublicKey,
+    ) -> Result<Packet, Error> {
+        let mode = Self::MODE_EXTERNAL | Self::MODE_SOURCE_MSGDIGBUF;
+
+        // Load PDU data
+        let sig_length = signature.as_ref().len();
+        let (sig_buf, pdu_buffer) = self.0.pdu_buffer().split_at_mut(sig_length);
+        sig_buf.copy_from_slice(signature.as_ref());
+        let pubkey_length = public_key.as_ref().len();
+        let (pubkey_buffer, _) = pdu_buffer.split_at_mut(pubkey_length);
+        pubkey_buffer.copy_from_slice(public_key.as_ref());
+
         let packet = self
             .0
             .opcode(OpCode::Verify)
             .mode(mode)
-            .param2(key_id as u16)
-            .pdu_data(signature)
+            .param2(Self::KEY_P256)
+            .pdu_length(sig_length + pubkey_length)
             .build();
         Ok(packet)
     }
@@ -815,5 +828,30 @@ mod tests {
         assert_eq!(packet[0x04..0x06], [0x01, 0x00]);
         assert_eq!(packet[0x06..0x0a], [0x00; 0x04]);
         assert_eq!(packet[0x0a..0x2a].as_ref(), data.as_ref());
+    }
+
+    #[test]
+    fn verify() {
+        let buf = &mut [0x00u8; 0xff];
+        let mut signature = Signature::default();
+        let mut public_key = PublicKey::default();
+
+        let (r, s) = signature.as_mut().split_at_mut(32);
+        r.iter_mut().for_each(|v| *v = 'r' as u8);
+        s.iter_mut().for_each(|v| *v = 's' as u8);
+        let (x, y) = public_key.as_mut().split_at_mut(32);
+        x.iter_mut().for_each(|v| *v = 'x' as u8);
+        y.iter_mut().for_each(|v| *v = 'y' as u8);
+
+        let packet = Verify::new(PacketBuilder::new(buf.as_mut()))
+            .external(&signature, &public_key)
+            .unwrap()
+            .buffer(buf.as_ref());
+        assert_eq!(packet[0x01], 0x87);
+        assert_eq!(packet[0x02], OpCode::Verify as u8);
+        assert_eq!(packet[0x03], 0x22);
+        assert_eq!(packet[0x04..0x06], [0x04, 0x00]);
+        assert_eq!(packet[0x06..0x46].as_ref(), signature.as_ref());
+        assert_eq!(packet[0x46..0x86].as_ref(), public_key.as_ref());
     }
 }
