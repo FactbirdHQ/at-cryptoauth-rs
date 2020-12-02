@@ -158,6 +158,7 @@ where
         self.try_into()
     }
 
+    /// Put the device into sleep mode.
     pub fn sleep(&mut self) -> Result<(), Error> {
         self.i2c.sleep()
     }
@@ -172,26 +173,21 @@ where
         self.execute(packet)?.as_ref().try_into()
     }
 
-    // Write to device's digest message buffer.
-    pub fn write_message_digest_buffer(&mut self, msg: &Digest) -> Result<(), Error> {
-        let packet = NonceCtx::new(self.packet_builder()).message_digest_buffer(msg)?;
-        self.execute(packet).map(drop)
-    }
-
-    // Create private key and output its public key.
+    // Create a new ECC key pair. Its private key is stored in the slot and returns the public key.
     pub fn create_private_key(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
         let packet = GenKey::new(self.packet_builder()).private_key(key_id)?;
         self.execute(packet)?.as_ref().try_into()
     }
 
-    // Write private key.
+    // Write a private key to the slot.
     pub fn write_private_key(&mut self, key_id: Slot, private_key: &Block) -> Result<(), Error> {
         let packet =
             PrivWrite::new(self.packet_builder()).write_private_key(key_id, private_key)?;
         self.execute(packet).map(drop)
     }
 
-    // Given a private key created and stored in advance, calculate its public key.
+    // Given a private key stored in the slot in advance, calculate and return
+    // its public key.
     pub fn generate_pubkey(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
         let packet = GenKey::new(self.packet_builder()).public_key(key_id)?;
         self.execute(packet)?.as_ref().try_into()
@@ -272,6 +268,12 @@ where
         data.as_mut()[..0x10].copy_from_slice(aes_key.as_ref());
         let packet =
             command::Write::new(self.atca.packet_builder()).slot(key_id, 0 as u8, &data)?;
+        self.atca.execute(packet).map(drop)
+    }
+
+    /// Write to device's digest message buffer.
+    pub fn write_message_digest_buffer(&mut self, msg: &Digest) -> Result<(), Error> {
+        let packet = NonceCtx::new(self.atca.packet_builder()).message_digest_buffer(msg)?;
         self.atca.execute(packet).map(drop)
     }
 
@@ -532,7 +534,7 @@ where
         // 1. Random value generation
         self.atca.random()?;
         // 2. Nonce load
-        self.atca.write_message_digest_buffer(digest)?;
+        self.atca.memory().write_message_digest_buffer(digest)?;
         // 3. Sign
         let packet = command::Sign::new(self.atca.packet_builder()).external(self.key_id)?;
         self.atca.execute(packet)?.as_ref().try_into()
@@ -560,7 +562,7 @@ where
         public_key: &PublicKey,
     ) -> Result<(), Error> {
         // 1. Nonce load
-        self.atca.write_message_digest_buffer(digest)?;
+        self.atca.memory().write_message_digest_buffer(digest)?;
         // 2. Verify
         let packet =
             command::Verify::new(self.atca.packet_builder()).external(signature, public_key)?;

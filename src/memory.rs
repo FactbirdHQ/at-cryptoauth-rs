@@ -1,6 +1,7 @@
 use super::error::{Error, ErrorKind};
 use core::ops::{Range, RangeInclusive};
 use core::slice::from_ref;
+
 /// Zone bit 7 set: Access 32 bytes, otherwise 4 bytes.
 const ZONE_READWRITE_32: u8 = 0x80;
 
