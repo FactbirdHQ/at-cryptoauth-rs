@@ -14,8 +14,7 @@ log = { version = "0.4.0", optional = true }
 openssl = { version = "0.10.30", features = ["vendored"], optional = true }
 
 [dependencies.embedded-hal]
-version = "0.2.3"
-features = ["unproven"]
+version = "1.0.0-alpha.4"
 
 [dependencies.signature]
 version = "1.2.2"
@@ -33,7 +32,8 @@ panic-halt = "0.2.0"
 panic-semihosting = "0.5.0"
 
 [dev-dependencies.stm32l4xx-hal]
-git = "https://github.com/stm32-rs/stm32l4xx-hal.git"
+git = "https://github.com/BlackbirdHQ/stm32l4xx-hal.git"
+branch = "factbird-mini-1.0"
 features = ["rt", "stm32l4x5"]
 
 [features]

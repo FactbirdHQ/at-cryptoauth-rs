@@ -52,7 +52,7 @@ fn main() -> ! {
     let dp = hal::stm32::Peripherals::take().unwrap();
 
     // Set up the system clock.
-    let mut flash = dp.FLASH.constrain();
+    let mut flash = dp.FLASH.constrain(hal::flash::FlashVariant::Size1024KB);
     let mut rcc = dp.RCC.constrain();
     let mut pwr = dp.PWR.constrain(&mut rcc.apb1r1);
 
