@@ -2,6 +2,9 @@
 name = "at-cryptoauth"
 version = "0.1.0"
 authors = ["Kei Shirakizawa <ks@blackbird.online>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/BlackbirdHQ/at-cryptoauth-rs"
+documentation = "https://docs.rs/at-cryptoauth"
 edition = "2018"
 
 [dependencies]
