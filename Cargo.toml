@@ -36,7 +36,8 @@ panic-halt = "0.2.0"
 panic-semihosting = "0.5.0"
 
 [dev-dependencies.stm32l4xx-hal]
-git = "https://github.com/stm32-rs/stm32l4xx-hal.git"
+git = "https://github.com/BlackbirdHQ/stm32l4xx-hal"
+branch = "factbird-mini-1.0"
 features = ["rt", "stm32l4x5"]
 
 [features]

@@ -37,6 +37,7 @@ use cortex_m_rt::exception;
 use cortex_m_rt::ExceptionFrame;
 use cortex_m_semihosting::hio;
 use hal::delay::Delay;
+use hal::flash::FlashVariant;
 use hal::i2c::I2c;
 use hal::prelude::*;
 use hal::rcc::{MsiFreq, PllConfig, PllDivider, PllSource};
@@ -52,7 +53,7 @@ fn main() -> ! {
     let dp = hal::stm32::Peripherals::take().unwrap();
 
     // Set up the system clock.
-    let mut flash = dp.FLASH.constrain();
+    let mut flash = dp.FLASH.constrain(FlashVariant::Size1024KB);
     let mut rcc = dp.RCC.constrain();
     let mut pwr = dp.PWR.constrain(&mut rcc.apb1r1);
 
