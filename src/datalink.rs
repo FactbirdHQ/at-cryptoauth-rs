@@ -66,7 +66,9 @@ where
         self.wake()?;
         self.send(&packet.buffer(buffer))?;
         // Wait for the device to finish its job.
-        self.delay.try_delay_us(exec_time.unwrap_or(1)).map_err(|_| Error::from(ErrorKind::Timeout))?;
+        self.delay
+            .try_delay_us(exec_time.unwrap_or(1))
+            .map_err(|_| Error::from(ErrorKind::Timeout))?;
         let response_buffer = self.receive(buffer)?;
         self.idle()?;
         Response::new(response_buffer)
@@ -116,7 +118,9 @@ where
         self.phy.try_write(0x00, from_ref(&0x00)).unwrap_err();
 
         // Wait for the device to wake up.
-        self.delay.try_delay_us(DELAY_US).map_err(|_| Error::from(ErrorKind::Timeout))?;
+        self.delay
+            .try_delay_us(DELAY_US)
+            .map_err(|_| Error::from(ErrorKind::Timeout))?;
 
         let buffer = &mut [0x00, 0x00, 0x00, 0x00];
         from_fn(|| self.phy.try_read(ADDRESS, buffer.as_mut()).into())
@@ -141,7 +145,9 @@ where
     pub(crate) fn sleep(&mut self) -> Result<(), Error> {
         let word_address = Transaction::Sleep as u8;
         // Wait for the I2C bus to be ready.
-        self.delay.try_delay_us(30).map_err(|_| Error::from(ErrorKind::Timeout))?;
+        self.delay
+            .try_delay_us(30)
+            .map_err(|_| Error::from(ErrorKind::Timeout))?;
         self.phy
             .try_write(ADDRESS, from_ref(&word_address))
             .map_err(|_| ErrorKind::TxFail.into())
