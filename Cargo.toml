@@ -1,6 +1,6 @@
 [package]
 name = "at-cryptoauth"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Kei Shirakizawa <ks@blackbird.online>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/BlackbirdHQ/at-cryptoauth-rs"
@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 crc = "2.0.0-rc.1"
-heapless = "^0.5"
+heapless = "^0.7"
 generic-array = "0.14.4"
 
 [dependencies.embedded-hal]
@@ -26,7 +26,7 @@ default-features = false
 
 # Dependencies for the STM32L4XX example
 [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dev-dependencies]
-cortex-m = "0.6.3"
+cortex-m = "0.7.2"
 cortex-m-rt = "0.6.12"
 cortex-m-semihosting = "0.3.5"
 panic-halt = "0.2.0"
