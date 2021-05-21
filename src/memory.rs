@@ -161,7 +161,7 @@ mod tests {
     use crate::client::Memory;
     use core::convert::identity;
     use core::iter::repeat;
-    use heapless::{consts, Vec};
+    use heapless::Vec;
     use Slot::*;
     use Zone::*;
 
@@ -205,7 +205,7 @@ mod tests {
             .chain(repeat(0).take(4))
             .chain(0x20..0x40)
             .chain(repeat(0).take(24))
-            .collect::<Vec<u8, consts::U96>>();
+            .collect::<Vec<u8, 96>>();
         assert_eq!(Size::Block.len() * 3, slot_buffer.len());
         slot_buffer
             .chunks(Size::Block.len())

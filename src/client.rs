@@ -14,7 +14,7 @@ use core::convert::{identity, TryFrom};
 use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayUs;
 use embedded_hal::blocking::i2c::{Read, Write};
-use heapless::{consts, Vec};
+use heapless::Vec;
 
 pub struct Verifier<'a, PHY, D>(RefCell<Verify<'a, PHY, D>>);
 
@@ -85,7 +85,7 @@ where
 
 pub struct AtCaClient<PHY, D> {
     i2c: I2c<PHY, D>,
-    buffer: Vec<u8, consts::U192>,
+    buffer: Vec<u8, 192>,
     clock_divider: ClockDivider,
 }
 
@@ -459,7 +459,7 @@ where
 // SHA
 pub struct Sha<'a, PHY, D> {
     atca: &'a mut AtCaClient<PHY, D>,
-    remaining_bytes: Vec<u8, consts::U64>,
+    remaining_bytes: Vec<u8, 64>,
 }
 
 impl<'a, PHY, D> Sha<'a, PHY, D>
@@ -482,7 +482,7 @@ where
         // Store remainging bytes for later processing
         let remainder_length = data.as_ref().len() % capacity;
         let (bytes, remainder) = data.as_ref().split_at(length - remainder_length);
-        self.remaining_bytes.extend(remainder);
+        self.remaining_bytes.extend_from_slice(remainder).ok();
 
         // Execute update command
         bytes.chunks(capacity).try_for_each(|chunk| {

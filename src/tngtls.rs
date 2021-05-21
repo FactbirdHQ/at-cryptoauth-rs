@@ -204,7 +204,6 @@ mod tests {
     use crate::command::OpCode;
     use core::convert::TryInto;
     use core::ops::Deref;
-    use heapless::consts::U5;
     use heapless::Vec;
     use OpCode::*;
     const KEY_TYPE_P256: u16 = 0x04; // P256 NIST ECC key
@@ -278,8 +277,8 @@ mod tests {
         }
 
         // Commands that returns its output to the slot.
-        fn creation_commands(&self) -> Vec<OpCode, U5> {
-            let mut commands = Vec::<OpCode, U5>::new();
+        fn creation_commands(&self) -> Vec<OpCode, 5> {
+            let mut commands = Vec::<OpCode, 5>::new();
             if self.key_id.is_private_key() && self.key_type() == KEY_TYPE_P256 && self.is_secret()
             {
                 if (self.write_config() >> 1) & 0x01 == 0x01 {
@@ -296,7 +295,7 @@ mod tests {
         // Commands that takes the slot as an intput.
         #[allow(dead_code)]
         fn operation_commands(&self) -> &[OpCode] {
-            let mut commands = Vec::<OpCode, U5>::new();
+            let mut commands = Vec::<OpCode, 5>::new();
             if self.key_id.is_private_key() {
                 if (self.read_key() >> 2) & 0x01 == 0x01 {
                     commands.push(Ecdh).unwrap();
