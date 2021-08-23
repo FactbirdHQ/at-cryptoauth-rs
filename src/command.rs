@@ -173,6 +173,36 @@ impl TryFrom<&[u8]> for PublicKey {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SharedSecret {
+    value: GenericArray<u8, U32>,
+}
+
+impl AsRef<[u8]> for SharedSecret {
+    fn as_ref(&self) -> &[u8] {
+        self.value.as_ref()
+    }
+}
+
+impl AsMut<[u8]> for SharedSecret {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.value.as_mut()
+    }
+}
+
+impl TryFrom<&[u8]> for SharedSecret {
+    type Error = Error;
+    fn try_from(buffer: &[u8]) -> Result<Self, Self::Error> {
+        if buffer.len() != 32 {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let mut value = Self::default();
+        value.as_mut().copy_from_slice(buffer);
+        Ok(value)
+    }
+}
+
 // A digest yielded from cryptographic hash functions. Merely a wrapper around
 // `GenericArray<u8, 32>` of `digest` crate.
 #[derive(Clone, Copy, Debug, Default)]
@@ -312,6 +342,28 @@ pub(crate) struct SecureBoot<'a>(PacketBuilder<'a>);
 #[allow(dead_code)]
 pub(crate) struct SelfTest<'a>(PacketBuilder<'a>);
 
+#[allow(dead_code)]
+impl<'a> Ecdh<'a> {
+    pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
+        Self(builder)
+    }
+
+    pub(crate) fn diffie_hellman(
+        &mut self,
+        private_key_id: Slot,
+        public_key: PublicKey,
+    ) -> Result<Packet, Error> {
+        let packet = self
+            .0
+            .opcode(OpCode::Ecdh)
+            .mode(0x00)
+            .param2(private_key_id as u16)
+            .pdu_data(public_key)
+            .build();
+        Ok(packet)
+    }
+}
+
 // Used when signing an internally stored digest. The GenDig command uses
 // SHA-256 to combine a stored value with the contents of TempKey, which must
 // have been valid prior to the execution of this command.
@@ -383,24 +435,36 @@ impl<'a> Info<'a> {
 }
 
 impl<'a> Lock<'a> {
+    const LOCK_ZONE_NO_CRC: u8 = 0x80;
+
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
     }
 
-    pub(crate) fn zone(&mut self, zone: Zone) -> Result<Packet, Error> {
-        let mode = match zone {
-            Zone::Config => 0x80,
-            Zone::Data => 0x01 | 0x80,
-            Zone::Otp => {
-                return Err(ErrorKind::BadParam.into());
-            }
+    pub(crate) fn zone(&mut self, zone: Zone, crc: Option<u16>) -> Result<Packet, Error> {
+        if matches!(zone, Zone::Otp) {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let packet = match crc {
+            None => self
+                .0
+                .opcode(OpCode::Lock)
+                .mode(Self::LOCK_ZONE_NO_CRC | zone as u8)
+                .build(),
+            Some(crc) => self
+                .0
+                .opcode(OpCode::Lock)
+                .mode(zone as u8)
+                .param2(crc)
+                .build(),
         };
-        let packet = self.0.opcode(OpCode::Lock).mode(mode).build();
+
         Ok(packet)
     }
 
     pub(crate) fn slot(&mut self, key_id: Slot) -> Result<Packet, Error> {
-        let mode = (key_id as u8) << 2 | 0x02 | 0x80;
+        let mode = (key_id as u8) << 2 | 0x02 | Self::LOCK_ZONE_NO_CRC;
         let packet = self.0.opcode(OpCode::Lock).mode(mode).build();
         Ok(packet)
     }
@@ -788,13 +852,27 @@ mod tests {
     fn lock() {
         let buf = &mut [0x00u8; 0xff];
         let packet = Lock::new(PacketBuilder::new(buf.as_mut()))
-            .zone(Zone::Config)
+            .zone(Zone::Config, None)
             .unwrap()
             .buffer(buf.as_ref());
         assert_eq!(packet[0x01], 0x07);
         assert_eq!(packet[0x02], OpCode::Lock as u8);
         assert_eq!(packet[0x03], 0x80);
         assert_eq!(packet[0x04..0x06], [0x00, 0x00]);
+    }
+
+    #[test]
+    fn lock_crc() {
+        let buf = &mut [0x00u8; 0xff];
+        let crc = 0xDEAD;
+        let packet = Lock::new(PacketBuilder::new(buf.as_mut()))
+            .zone(Zone::Config, Some(crc))
+            .unwrap()
+            .buffer(buf.as_ref());
+        assert_eq!(packet[0x01], 0x07);
+        assert_eq!(packet[0x02], OpCode::Lock as u8);
+        assert_eq!(packet[0x03], 0x00);
+        assert_eq!(packet[0x04..0x06], crc.to_le_bytes());
     }
 
     #[test]

@@ -44,6 +44,7 @@ log = { version = "0.4.0", optional = true }
 openssl = { version = "0.10.30", features = ["vendored"], optional = true }
 
 [features]
+default = []
 std = ["env_logger", "linux-embedded-hal", "log", "openssl"]
 
 [[example]]

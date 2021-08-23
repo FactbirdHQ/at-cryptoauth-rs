@@ -1,3 +1,5 @@
+use crate::command::{Ecdh, SharedSecret};
+
 use super::clock_divider::ClockDivider;
 use super::command::{
     self, GenKey, Info, Lock, NonceCtx, PrivWrite, PublicKey, Random, Serial, Word,
@@ -196,6 +198,15 @@ where
         let packet = GenKey::new(self.packet_builder()).public_key(key_id)?;
         self.execute(packet)?.as_ref().try_into()
     }
+
+    pub fn diffie_hellman(
+        &mut self,
+        key_id: Slot,
+        public_key: PublicKey,
+    ) -> Result<SharedSecret, Error> {
+        let packet = Ecdh::new(self.packet_builder()).diffie_hellman(key_id, public_key)?;
+        self.execute(packet)?.as_ref().try_into()
+    }
 }
 
 // Memory zones consist of config, data and OTP.
@@ -316,7 +327,12 @@ where
     }
 
     pub fn lock(&mut self, zone: Zone) -> Result<(), Error> {
-        let packet = Lock::new(self.atca.packet_builder()).zone(zone)?;
+        let packet = Lock::new(self.atca.packet_builder()).zone(zone, None)?;
+        self.atca.execute(packet).map(drop)
+    }
+
+    pub fn lock_crc(&mut self, zone: Zone, crc: u16) -> Result<(), Error> {
+        let packet = Lock::new(self.atca.packet_builder()).zone(zone, Some(crc))?;
         self.atca.execute(packet).map(drop)
     }
 

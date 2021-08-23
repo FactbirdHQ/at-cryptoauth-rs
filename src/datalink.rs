@@ -67,7 +67,7 @@ where
         self.send(&packet.buffer(buffer))?;
         // Wait for the device to finish its job.
         self.delay
-            .try_delay_us(exec_time.unwrap_or(1))
+            .try_delay_us(exec_time.unwrap_or(1) * 1000)
             .map_err(|_| Error::from(ErrorKind::Timeout))?;
         let response_buffer = self.receive(buffer)?;
         self.idle()?;
@@ -115,7 +115,7 @@ where
 
     fn wake(&mut self) -> Result<(), Error> {
         // Send a single null byte to an absent address.
-        self.phy.try_write(0x00, from_ref(&0x00)).unwrap_err();
+        self.phy.try_write(ADDRESS, from_ref(&0x00)).unwrap_err();
 
         // Wait for the device to wake up.
         self.delay
