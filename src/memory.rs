@@ -23,13 +23,13 @@ impl Size {
 #[derive(Copy, Clone, Debug)]
 pub enum Zone {
     Config = 0x00,
-    Otp = 0x01,
-    Data = 0x02,
+    Data = 0x01,
+    Otp = 0x02,
 }
 
 impl Zone {
     // A helper method to translate a global index into block and offset.
-    pub(crate) fn locate_index(index: usize) -> (u8, u8, u8) {
+    pub fn locate_index(index: usize) -> (u8, u8, u8) {
         let block = index / Size::Block.len();
         let offset = index % Size::Block.len() / Size::Word.len();
         let position = index % Size::Word.len();
@@ -51,7 +51,7 @@ impl Zone {
             return Err(ErrorKind::BadParam.into());
         }
         let block = (block as u16) << 3;
-        let offset = (offset & 0b0000_0111u8) as u16;
+        let offset = (offset & 0x07) as u16;
         let addr = block | offset;
         match self {
             Self::Config | Self::Otp => Ok(addr),

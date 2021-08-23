@@ -25,7 +25,7 @@ const CUSTOM_ALG: Algorithm<u16> = Algorithm {
 };
 
 // CRC memoise table
-const CRC16: Crc<u16> = Crc::<u16>::new(&CUSTOM_ALG);
+pub const CRC16: Crc<u16> = Crc::<u16>::new(&CUSTOM_ALG);
 
 #[derive(Debug)]
 pub(crate) struct PacketBuilder<'a> {
