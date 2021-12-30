@@ -1,4 +1,4 @@
-use core::fmt;
+use core::convert::TryFrom;
 
 /// An error type representing ATECC608's erroneous conditions.
 #[derive(Copy, Clone, Debug)]
@@ -28,11 +28,11 @@ impl From<Status> for Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl core::fmt::Display for Error {
+    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match &self.repr {
-            Repr::Device(status) => write!(fmt, "{}", status.as_str()),
-            Repr::Simple(kind) => write!(fmt, "{}", kind.as_str()),
+            Repr::Device(status) => write!(fmt, "{}", status),
+            Repr::Simple(kind) => write!(fmt, "{}", kind),
         }
     }
 }
@@ -60,33 +60,44 @@ pub enum Status {
     HealthTest = 0x08,
 }
 
-impl Status {
-    pub fn from_u8(status: u8) -> Option<Self> {
-        use Status::*;
-        match status {
-            0x00 => None,
-            x if x == CheckmacVerifyFailed as u8 => CheckmacVerifyFailed.into(),
-            x if x == Execution as u8 => Execution.into(),
-            x if x == Parse as u8 => Parse.into(),
-            x if x == Crc as u8 => Crc.into(),
-            x if x == Ecc as u8 => Ecc.into(),
-            x if x == SelfTest as u8 => SelfTest.into(),
-            x if x == HealthTest as u8 => HealthTest.into(),
-            _ => Unknown.into(),
+impl TryFrom<u8> for Status {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Err(()),
+            0x01 => Ok(Self::CheckmacVerifyFailed),
+            0x0F => Ok(Self::Execution),
+            0x03 => Ok(Self::Parse),
+            0xFF => Ok(Self::Crc),
+            0x05 => Ok(Self::Ecc),
+            0x07 => Ok(Self::SelfTest),
+            0x08 => Ok(Self::HealthTest),
+            _ => Ok(Self::Unknown),
         }
     }
+}
 
-    fn as_str(&self) -> &'static str {
-        use Status::*;
+impl core::fmt::Display for Status {
+    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            CheckmacVerifyFailed => "checkmac or verify failed",
-            Crc => "bad crc found (command not properly received by device) or other comm error",
-            Ecc => "computation error during ECC processing causing invalid results",
-            Execution => "chip can't execute the command",
-            HealthTest => "random number generator health test error",
-            Parse => "command received byte length, opcode or parameter was illegal",
-            SelfTest => "chip is in self test failure mode",
-            Unknown => "response contains unknown non-zero status byte",
+            Self::CheckmacVerifyFailed => write!(fmt, "checkmac or verify failed"),
+            Self::Crc => write!(
+                fmt,
+                "bad crc found (command not properly received by device) or other comm error"
+            ),
+            Self::Ecc => write!(
+                fmt,
+                "computation error during ECC processing causing invalid results"
+            ),
+            Self::Execution => write!(fmt, "chip can't execute the command"),
+            Self::HealthTest => write!(fmt, "random number generator health test error"),
+            Self::Parse => write!(
+                fmt,
+                "command received byte length, opcode or parameter was illegal"
+            ),
+            Self::SelfTest => write!(fmt, "chip is in self test failure mode"),
+            Self::Unknown => write!(fmt, "response contains unknown non-zero status byte"),
         }
     }
 }
@@ -135,32 +146,51 @@ pub enum ErrorKind {
     WakeFailed = 0xD0,
 }
 
-impl ErrorKind {
-    fn as_str(&self) -> &'static str {
-        use ErrorKind::*;
+impl core::fmt::Display for ErrorKind {
+    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            AssertFailure => "failed run-time consistency check",
-            BadOpcode => "opcode is not supported by the device",
-            BadParam => "bad argument (out of range, null pointer, etc.)",
-            CommFail => "communication with device failed",
-            ConfigZoneLocked => "config zone is locked",
-            DataZoneLocked => "data zone is locked",
-            FuncFail => "function could not execute due to incorrect condition / state",
-            InvalidId => "invalid device id, id not set",
-            InvalidSize => "count value is out of range or greater than buffer size",
-            NotLocked => "required zone was not locked",
-            ResyncWithWakeup => "re-synchronization succeeded, but only after generating a Wake-up",
-            RxCrcError => "crc error in data received from device",
-            RxFail => "timed out while waiting for response. Number of bytes received is > 0",
-            SmallBuffer => "supplied buffer is too small for data required",
-            Timeout => "timed out while waiting for response",
-            TooManyCommRetries => {
-                "device did not respond too many times, indicating no device present"
+            Self::AssertFailure => write!(fmt, "failed run-time consistency check"),
+            Self::BadOpcode => write!(fmt, "opcode is not supported by the device"),
+            Self::BadParam => write!(fmt, "bad argument (out of range, null pointer, etc.)"),
+            Self::CommFail => write!(fmt, "communication with device failed"),
+            Self::ConfigZoneLocked => write!(fmt, "config zone is locked"),
+            Self::DataZoneLocked => write!(fmt, "data zone is locked"),
+            Self::FuncFail => write!(
+                fmt,
+                "function could not execute due to incorrect condition / state"
+            ),
+            Self::InvalidId => write!(fmt, "invalid device id, id not set"),
+            Self::InvalidSize => write!(
+                fmt,
+                "count value is out of range or greater than buffer size"
+            ),
+            Self::NotLocked => write!(fmt, "required zone was not locked"),
+            Self::ResyncWithWakeup => write!(
+                fmt,
+                "re-synchronization succeeded, but only after generating a Wake-up"
+            ),
+            Self::RxCrcError => write!(fmt, "crc error in data received from device"),
+            Self::RxFail => write!(
+                fmt,
+                "timed out while waiting for response. Number of bytes received is > 0"
+            ),
+            Self::SmallBuffer => write!(fmt, "supplied buffer is too small for data required"),
+            Self::Timeout => write!(fmt, "timed out while waiting for response"),
+            Self::TooManyCommRetries => {
+                write!(
+                    fmt,
+                    "device did not respond too many times, indicating no device present"
+                )
             }
-            TxFail => "failed to write",
-            Unimplemented => "function or some element of it hasn't been implemented yet",
-            UseFlagsConsumed => "use flags on the device indicates its consumed fully",
-            WakeFailed => "device did not respond to wake call as expected",
+            Self::TxFail => write!(fmt, "failed to write"),
+            Self::Unimplemented => write!(
+                fmt,
+                "function or some element of it hasn't been implemented yet"
+            ),
+            Self::UseFlagsConsumed => {
+                write!(fmt, "use flags on the device indicates its consumed fully")
+            }
+            Self::WakeFailed => write!(fmt, "device did not respond to wake call as expected"),
         }
     }
 }

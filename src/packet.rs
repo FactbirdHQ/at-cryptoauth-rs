@@ -1,7 +1,7 @@
 use super::command::OpCode;
 use super::error::{Error, ErrorKind, Status};
 use crate::datalink::Transaction;
-use core::convert::TryInto;
+use core::convert::{TryFrom, TryInto};
 use core::mem::size_of;
 use core::ops::RangeTo;
 use crc::{Algorithm, Crc};
@@ -88,12 +88,12 @@ impl<'a> PacketBuilder<'a> {
         self.buffer[PDU_OFFSET..].as_mut()
     }
 
-    pub(crate) fn build(&mut self) -> Packet {
+    pub(crate) fn build(&mut self) -> Result<Packet, Error> {
         let packet_length = self
             .pdu_length
             .iter()
             .fold(CMD_SIZE_MIN, |min, pdu_len| min + pdu_len);
-        let opcode = self.opcode.expect("The opcode field is mandatory");
+        let opcode = self.opcode.ok_or(Error::from(ErrorKind::BadOpcode))?;
         let mode = self.mode.unwrap_or_default();
         let param2 = self.param2.unwrap_or_default();
 
@@ -112,10 +112,10 @@ impl<'a> PacketBuilder<'a> {
         packet[crc_offset..packet_length]
             .as_mut()
             .copy_from_slice(crc.to_le_bytes().as_ref());
-        Packet {
+        Ok(Packet {
             opcode,
             range: (..packet_length + PACKET_OFFSET),
-        }
+        })
     }
 }
 
@@ -173,7 +173,7 @@ impl<'a> Response<'a> {
         // Check error status. Error packets are always 4 bytes long.
         let (header, pdu) = payload.split_at(1);
         if header[0] == 0x04 {
-            if let Some(status) = Status::from_u8(pdu[0]) {
+            if let Ok(status) = Status::try_from(pdu[0]) {
                 return Err(status.into());
             }
         }
