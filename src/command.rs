@@ -359,7 +359,7 @@ impl<'a> Ecdh<'a> {
             .mode(0x00)
             .param2(private_key_id as u16)
             .pdu_data(public_key)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -374,7 +374,11 @@ impl<'a> GenDig<'a> {
     }
 
     pub(crate) fn gendig(&mut self, key_id: Slot) -> Result<Packet, Error> {
-        let packet = self.0.opcode(OpCode::GenDig).param2(key_id as u16).build();
+        let packet = self
+            .0
+            .opcode(OpCode::GenDig)
+            .param2(key_id as u16)
+            .build()?;
         Ok(packet)
     }
 }
@@ -400,7 +404,7 @@ impl<'a> GenKey<'a> {
             .opcode(OpCode::GenKey)
             .mode(Self::MODE_PRIVATE)
             .param2(key_id as u16)
-            .build();
+            .build()?;
         Ok(packet)
     }
 
@@ -410,7 +414,7 @@ impl<'a> GenKey<'a> {
             .opcode(OpCode::GenKey)
             .mode(Self::MODE_PUBLIC)
             .param2(key_id as u16)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -429,7 +433,7 @@ impl<'a> Info<'a> {
             .0
             .opcode(OpCode::Info)
             .mode(Self::MODE_REVISION)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -451,13 +455,13 @@ impl<'a> Lock<'a> {
                 .0
                 .opcode(OpCode::Lock)
                 .mode(Self::LOCK_ZONE_NO_CRC | zone as u8)
-                .build(),
+                .build()?,
             Some(crc) => self
                 .0
                 .opcode(OpCode::Lock)
                 .mode(zone as u8)
                 .param2(crc)
-                .build(),
+                .build()?,
         };
 
         Ok(packet)
@@ -465,7 +469,7 @@ impl<'a> Lock<'a> {
 
     pub(crate) fn slot(&mut self, key_id: Slot) -> Result<Packet, Error> {
         let mode = (key_id as u8) << 2 | 0x02 | Self::LOCK_ZONE_NO_CRC;
-        let packet = self.0.opcode(OpCode::Lock).mode(mode).build();
+        let packet = self.0.opcode(OpCode::Lock).mode(mode).build()?;
         Ok(packet)
     }
 }
@@ -509,7 +513,7 @@ impl<'a> NonceCtx<'a> {
             .opcode(OpCode::Nonce)
             .mode(mode)
             .pdu_data(msg)
-            .build();
+            .build()?;
         Ok(packet)
     }
 
@@ -560,7 +564,7 @@ impl<'a> PrivWrite<'a> {
             .pdu_length(mac_length)
             .opcode(OpCode::PrivWrite)
             .param2(key_id as u16)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -585,7 +589,7 @@ impl<'a> Sha<'a> {
             .0
             .opcode(OpCode::Sha)
             .mode(Self::MODE_SHA256_START)
-            .build();
+            .build()?;
         Ok(packet)
     }
 
@@ -602,7 +606,7 @@ impl<'a> Sha<'a> {
             .mode(Self::MODE_SHA256_UPDATE)
             .param2(length as u16)
             .pdu_data(data)
-            .build();
+            .build()?;
         Ok(packet)
     }
 
@@ -619,7 +623,7 @@ impl<'a> Sha<'a> {
             .mode(Self::MODE_SHA256_END)
             .param2(length as u16)
             .pdu_data(data)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -654,7 +658,7 @@ impl<'a> Aes<'a> {
             .mode(Self::MODE_ENCRYPT)
             .param2(slot as u16)
             .pdu_data(plaintext)
-            .build();
+            .build()?;
         Ok(packet)
     }
 
@@ -676,7 +680,7 @@ impl<'a> Aes<'a> {
             .mode(Self::MODE_DECRYPT)
             .param2(slot as u16)
             .pdu_data(ciphertext)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -694,7 +698,7 @@ impl<'a> Random<'a> {
             .0
             .opcode(OpCode::Random)
             .mode(Self::MODE_SEED_UPDATE)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -708,7 +712,12 @@ impl<'a> Read<'a> {
     pub(crate) fn slot(&mut self, slot: Slot, block: u8) -> Result<Packet, Error> {
         let addr = Zone::Data.get_slot_addr(slot, block)?;
         let mode = Zone::Data.encode(Size::Block);
-        let packet = self.0.opcode(OpCode::Read).mode(mode).param2(addr).build();
+        let packet = self
+            .0
+            .opcode(OpCode::Read)
+            .mode(mode)
+            .param2(addr)
+            .build()?;
         Ok(packet)
     }
 
@@ -721,7 +730,12 @@ impl<'a> Read<'a> {
     ) -> Result<Packet, Error> {
         let addr = zone.get_addr(block, offset)?;
         let mode = zone.encode(size);
-        let packet = self.0.opcode(OpCode::Read).mode(mode).param2(addr).build();
+        let packet = self
+            .0
+            .opcode(OpCode::Read)
+            .mode(mode)
+            .param2(addr)
+            .build()?;
         Ok(packet)
     }
 }
@@ -744,7 +758,7 @@ impl<'a> Sign<'a> {
             .opcode(OpCode::Sign)
             .mode(mode)
             .param2(key_id as u16)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -782,7 +796,7 @@ impl<'a> Verify<'a> {
             .mode(mode)
             .param2(Self::KEY_P256)
             .pdu_length(sig_length + pubkey_length)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
@@ -802,7 +816,7 @@ impl<'a> Write<'a> {
             .mode(mode)
             .param2(addr)
             .pdu_data(data)
-            .build();
+            .build()?;
         Ok(packet)
     }
 
@@ -826,7 +840,7 @@ impl<'a> Write<'a> {
             .mode(mode)
             .param2(addr)
             .pdu_data(data)
-            .build();
+            .build()?;
         Ok(packet)
     }
 }
