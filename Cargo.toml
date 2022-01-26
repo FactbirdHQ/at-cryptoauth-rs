@@ -14,7 +14,7 @@ heapless = "^0.7"
 generic-array = "0.14.4"
 
 [dependencies.embedded-hal]
-version = "1.0.0-alpha.4"
+version = "=1.0.0-alpha.6"
 
 [dependencies.signature]
 version = "1.2.2"
@@ -27,25 +27,25 @@ default-features = false
 # Dependencies for the STM32L4XX example
 [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dev-dependencies]
 cortex-m = "0.7.2"
-cortex-m-rt = "0.6.12"
+cortex-m-rt = "0.7"
 cortex-m-semihosting = "0.3.5"
 panic-halt = "0.2.0"
 panic-semihosting = "0.5.0"
 
 [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dev-dependencies.stm32l4xx-hal]
-version = "0.6.0"
-features = ["rt", "stm32l4x5"]
+path = "../stm32l4xx-hal"
+features = ["rt", "stm32l475"]
 
 # Dependencies for the RaspberryPi example
 [target.armv7-unknown-linux-gnueabihf.dependencies]
-env_logger = { version = "0.8.1", optional = true }
-linux-embedded-hal = { version = "0.4.0-alpha.0", optional = true }
+env_logger = { version = "0.9", optional = true }
+# linux-embedded-hal = { version = "0.4.0-alpha.1", optional = true }
 log = { version = "0.4.0", optional = true }
 openssl = { version = "0.10.30", features = ["vendored"], optional = true }
 
 [features]
 default = []
-std = ["env_logger", "linux-embedded-hal", "log", "openssl"]
+std = ["env_logger", "log", "openssl"]
 
 [[example]]
 name = "raspberrypi_atecc608"

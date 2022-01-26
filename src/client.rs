@@ -14,8 +14,8 @@ use core::cell::RefCell;
 use core::convert::TryInto;
 use core::convert::{identity, TryFrom};
 use core::fmt::Debug;
-use embedded_hal::blocking::delay::DelayUs;
-use embedded_hal::blocking::i2c::{Read, Write};
+use embedded_hal::delay::blocking::DelayUs;
+use embedded_hal::i2c::blocking::{Read, Write};
 use heapless::Vec;
 
 pub struct Verifier<'a, PHY, D>(RefCell<Verify<'a, PHY, D>>);
@@ -31,7 +31,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
         let digest = self
@@ -68,7 +68,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
         let digest = self
@@ -141,7 +141,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     fn execute(&mut self, packet: Packet) -> Result<Response<'_>, Error> {
         let exec_time = self.clock_divider.execution_time(packet.opcode());
@@ -225,7 +225,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     pub fn serial_number(&mut self) -> Result<Serial, Error> {
         let packet =
@@ -417,7 +417,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     pub fn encrypt(&mut self, plaintext: &[u8], ciphertext: &mut [u8]) -> Result<(), Error> {
         use command::Aes as AesCmd;
@@ -483,7 +483,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     pub fn init(&mut self) -> Result<(), Error> {
         let packet = command::Sha::new(self.atca.packet_builder()).start()?;
@@ -540,7 +540,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message.
@@ -565,7 +565,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message and signature.

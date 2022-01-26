@@ -12,8 +12,8 @@ use super::memory::{Size, Slot, Zone};
 use core::convert::TryFrom;
 use core::fmt::Debug;
 use digest::{FixedOutputDirty, Reset, Update};
-use embedded_hal::blocking::delay::DelayUs;
-use embedded_hal::blocking::i2c::{Read, Write};
+use embedded_hal::delay::blocking::DelayUs;
+use embedded_hal::i2c::blocking::{Read, Write};
 use generic_array::typenum::U32;
 use generic_array::GenericArray;
 
@@ -52,7 +52,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     fn update(&mut self, data: impl AsRef<[u8]>) {
         self.0.update(data).expect("update operation failed");
@@ -64,7 +64,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     type OutputSize = U32;
     fn finalize_into_dirty(&mut self, out: &mut GenericArray<u8, Self::OutputSize>) {
@@ -78,7 +78,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     fn reset(&mut self) {}
 }
@@ -133,7 +133,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     // Slot config
     pub fn configure_permissions(&mut self) -> Result<(), Error> {
@@ -173,7 +173,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     type Error = Error;
     fn try_from(atca: &'a mut AtCaClient<PHY, D>) -> Result<Self, Self::Error> {
