@@ -6,8 +6,8 @@ use super::packet::{Packet, Response};
 use core::fmt::Debug;
 use core::iter::from_fn;
 use core::slice::from_ref;
-use embedded_hal::blocking::delay::DelayUs;
-use embedded_hal::blocking::i2c::{Read, Write};
+use embedded_hal::delay::blocking::DelayUs;
+use embedded_hal::i2c::blocking::{Read, Write};
 const WAKE_RESPONSE_EXPECTED: &[u8] = &[0x04, 0x11, 0x33, 0x43];
 const WAKE_SELFTEST_FAILED: &[u8] = &[0x04, 0x07, 0xC4, 0x40];
 
@@ -53,7 +53,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayUs,
 {
     /// Wakes up device, sends the packet, waits for command completion,
     /// receives response, and puts the device into the idle state.
@@ -67,7 +67,7 @@ where
         self.send(&packet.buffer(buffer))?;
         // Wait for the device to finish its job.
         self.delay
-            .try_delay_us(exec_time.unwrap_or(1) * 1000)
+            .delay_us(exec_time.unwrap_or(1) * 1000)
             .map_err(|_| Error::from(ErrorKind::Timeout))?;
         let response_buffer = self.receive(buffer)?;
         self.idle()?;
@@ -79,7 +79,7 @@ where
         T: AsRef<[u8]>,
     {
         self.phy
-            .try_write(ADDRESS, bytes.as_ref())
+            .write(ADDRESS, bytes.as_ref())
             .map_err(|_| ErrorKind::TxFail.into())
     }
 
@@ -87,14 +87,14 @@ where
     fn receive<'a>(&mut self, buffer: &'a mut [u8]) -> Result<&'a mut [u8], Error> {
         // Reset indicates the beginning of transaction.
         let word_address = Transaction::Reset as u8;
-        from_fn(|| self.phy.try_write(ADDRESS, from_ref(&word_address)).into())
+        from_fn(|| self.phy.write(ADDRESS, from_ref(&word_address)).into())
             .take(RETRY)
             .find_map(Result::<_, _>::ok)
             .ok_or_else(|| Error::from(ErrorKind::TxFail))?;
 
         let min_resp_size = 4;
         self.phy
-            .try_read(ADDRESS, &mut buffer[0..2])
+            .read(ADDRESS, &mut buffer[0..2])
             .map_err(|_| Error::from(ErrorKind::RxFail))?;
 
         let length_to_read = match buffer[0] {
@@ -108,22 +108,22 @@ where
         };
 
         self.phy
-            .try_read(ADDRESS, buffer[2..length_to_read].as_mut())
+            .read(ADDRESS, buffer[2..length_to_read].as_mut())
             .map(move |()| buffer[..length_to_read].as_mut())
             .map_err(|_| ErrorKind::RxFail.into())
     }
 
     fn wake(&mut self) -> Result<(), Error> {
         // Send a single null byte to an absent address.
-        self.phy.try_write(ADDRESS, from_ref(&0x00)).unwrap_err();
+        self.phy.write(ADDRESS, from_ref(&0x00)).unwrap_err();
 
         // Wait for the device to wake up.
         self.delay
-            .try_delay_us(DELAY_US)
+            .delay_us(DELAY_US)
             .map_err(|_| Error::from(ErrorKind::Timeout))?;
 
         let buffer = &mut [0x00, 0x00, 0x00, 0x00];
-        from_fn(|| self.phy.try_read(ADDRESS, buffer.as_mut()).into())
+        from_fn(|| self.phy.read(ADDRESS, buffer.as_mut()).into())
             .take(RETRY)
             .find_map(Result::<_, _>::ok)
             .ok_or_else(|| Error::from(ErrorKind::RxFail))?;
@@ -138,7 +138,7 @@ where
     fn idle(&mut self) -> Result<(), Error> {
         let word_address = Transaction::Idle as u8;
         self.phy
-            .try_write(ADDRESS, from_ref(&word_address))
+            .write(ADDRESS, from_ref(&word_address))
             .map_err(|_| ErrorKind::TxFail.into())
     }
 
@@ -146,10 +146,10 @@ where
         let word_address = Transaction::Sleep as u8;
         // Wait for the I2C bus to be ready.
         self.delay
-            .try_delay_us(30)
+            .delay_us(30)
             .map_err(|_| Error::from(ErrorKind::Timeout))?;
         self.phy
-            .try_write(ADDRESS, from_ref(&word_address))
+            .write(ADDRESS, from_ref(&word_address))
             .map_err(|_| ErrorKind::TxFail.into())
     }
 }
