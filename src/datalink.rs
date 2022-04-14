@@ -115,7 +115,9 @@ where
 
     fn wake(&mut self) -> Result<(), Error> {
         // Send a single null byte to an absent address.
-        self.phy.write(ADDRESS, from_ref(&0x00)).unwrap_err();
+        self.phy
+            .write(ADDRESS, from_ref(&0x00))
+            .map_err(|_| Error::from(ErrorKind::TxFail))?;
 
         // Wait for the device to wake up.
         self.delay

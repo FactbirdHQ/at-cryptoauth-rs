@@ -1,4 +1,6 @@
 #![no_std]
+mod fmt;
+
 mod client;
 mod clock_divider;
 mod command;
