@@ -13,8 +13,8 @@ use super::{Block, Digest, Signature};
 use core::cell::RefCell;
 use core::convert::TryInto;
 use core::convert::{identity, TryFrom};
-use embedded_hal::delay::blocking::DelayUs;
-use embedded_hal::i2c::blocking;
+use embedded_hal::delay::DelayUs;
+use embedded_hal::i2c;
 use heapless::Vec;
 
 pub struct Verifier<'a, PHY, D>(RefCell<Verify<'a, PHY, D>>);
@@ -27,7 +27,7 @@ impl<'a, PHY, D> From<Verify<'a, PHY, D>> for Verifier<'a, PHY, D> {
 
 impl<'a, PHY, D> signature::Verifier<Signature> for Verifier<'a, PHY, D>
 where
-    PHY: blocking::I2c,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
@@ -62,7 +62,7 @@ impl<'a, PHY, D> From<Sign<'a, PHY, D>> for Signer<'a, PHY, D> {
 
 impl<'a, PHY, D> signature::Signer<Signature> for Signer<'a, PHY, D>
 where
-    PHY: blocking::I2c,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
@@ -133,7 +133,7 @@ impl<PHY, D> AtCaClient<PHY, D> {
 
 impl<PHY, D> AtCaClient<PHY, D>
 where
-    PHY: blocking::I2c,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     fn execute(&mut self, packet: Packet) -> Result<Response<'_>, Error> {
@@ -215,7 +215,7 @@ impl<'a, PHY, D> Memory<'a, PHY, D> {
 
 impl<'a, PHY, D> Memory<'a, PHY, D>
 where
-    PHY: blocking::I2c,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     pub fn serial_number(&mut self) -> Result<Serial, Error> {
@@ -405,7 +405,7 @@ pub struct Aes<'a, PHY, D> {
 
 impl<'a, PHY, D> Aes<'a, PHY, D>
 where
-    PHY: blocking::I2c,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     pub fn encrypt(&mut self, plaintext: &[u8], ciphertext: &mut [u8]) -> Result<(), Error> {
@@ -469,7 +469,7 @@ pub struct Sha<'a, PHY, D> {
 
 impl<'a, PHY, D> Sha<'a, PHY, D>
 where
-    PHY: blocking::I2c,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     pub fn init(&mut self) -> Result<(), Error> {
@@ -524,7 +524,7 @@ pub struct Sign<'a, PHY, D> {
 
 impl<'a, PHY, D> Sign<'a, PHY, D>
 where
-    PHY: blocking::I2c,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
@@ -547,7 +547,7 @@ pub struct Verify<'a, PHY, D> {
 
 impl<'a, PHY, D> Verify<'a, PHY, D>
 where
-    PHY: blocking::I2c,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the

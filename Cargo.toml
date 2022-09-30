@@ -18,7 +18,7 @@ defmt = { version = "^0.3", optional = true }
 
 
 [dependencies.embedded-hal]
-version = "=1.0.0-alpha.8"
+version = "=1.0.0-alpha.9"
 
 [dependencies.signature]
 version = "1.2.2"
@@ -36,9 +36,9 @@ cortex-m-semihosting = "0.3.5"
 panic-halt = "0.2.0"
 panic-semihosting = "0.5.0"
 
-[target.'cfg(all(target_arch = "arm", target_os = "none"))'.dev-dependencies.stm32l4xx-hal]
-path = "../stm32l4xx-hal"
-features = ["rt", "stm32l475"]
+# [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dev-dependencies.stm32l4xx-hal]
+# path = "../stm32l4xx-hal"
+# features = ["rt", "stm32l475"]
 
 # Dependencies for the RaspberryPi example
 [target.armv7-unknown-linux-gnueabihf.dependencies]
