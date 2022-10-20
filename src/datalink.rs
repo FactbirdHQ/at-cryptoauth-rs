@@ -6,8 +6,8 @@ use super::packet::{Packet, Response};
 use core::fmt::Debug;
 use core::iter::from_fn;
 use core::slice::from_ref;
-use embedded_hal::delay::blocking::DelayUs;
-use embedded_hal::i2c::blocking::{Read, Write};
+use embedded_hal::delay::DelayUs;
+use embedded_hal::i2c;
 const WAKE_RESPONSE_EXPECTED: &[u8] = &[0x04, 0x11, 0x33, 0x43];
 const WAKE_SELFTEST_FAILED: &[u8] = &[0x04, 0x07, 0xC4, 0x40];
 
@@ -50,9 +50,7 @@ impl<PHY, D> I2c<PHY, D> {
 
 impl<PHY, D> I2c<PHY, D>
 where
-    PHY: Read + Write,
-    <PHY as Read>::Error: Debug,
-    <PHY as Write>::Error: Debug,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     /// Wakes up device, sends the packet, waits for command completion,
@@ -117,8 +115,7 @@ where
         // Send a single null byte to an absent address.
         //
         // Ignore errors as this will error if the device is not awake yet.
-        self.phy
-            .write(ADDRESS, from_ref(&0x00)).ok();
+        self.phy.write(ADDRESS, from_ref(&0x00)).ok();
 
         // Wait for the device to wake up.
         self.delay

@@ -10,10 +10,9 @@ use super::client::{AtCaClient, Memory, Sha};
 use super::error::Error;
 use super::memory::{Size, Slot, Zone};
 use core::convert::TryFrom;
-use core::fmt::Debug;
 use digest::{FixedOutputDirty, Reset, Update};
-use embedded_hal::delay::blocking::DelayUs;
-use embedded_hal::i2c::blocking::{Read, Write};
+use embedded_hal::delay::DelayUs;
+use embedded_hal::i2c;
 use generic_array::typenum::U32;
 use generic_array::GenericArray;
 
@@ -35,23 +34,9 @@ impl<'a, PHY, D> From<Sha<'a, PHY, D>> for Hasher<'a, PHY, D> {
     }
 }
 
-impl<'a, PHY, D> Clone for Hasher<'a, PHY, D> {
-    fn clone(&self) -> Self {
-        unimplemented!()
-    }
-}
-
-impl<'a, PHY, D> Default for Hasher<'a, PHY, D> {
-    fn default() -> Self {
-        unimplemented!()
-    }
-}
-
 impl<'a, PHY, D> Update for Hasher<'a, PHY, D>
 where
-    PHY: Read + Write,
-    <PHY as Read>::Error: Debug,
-    <PHY as Write>::Error: Debug,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     fn update(&mut self, data: impl AsRef<[u8]>) {
@@ -61,9 +46,7 @@ where
 
 impl<'a, PHY, D> FixedOutputDirty for Hasher<'a, PHY, D>
 where
-    PHY: Read + Write,
-    <PHY as Read>::Error: Debug,
-    <PHY as Write>::Error: Debug,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     type OutputSize = U32;
@@ -75,9 +58,7 @@ where
 
 impl<'a, PHY, D> Reset for Hasher<'a, PHY, D>
 where
-    PHY: Read + Write,
-    <PHY as Read>::Error: Debug,
-    <PHY as Write>::Error: Debug,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     fn reset(&mut self) {}
@@ -130,9 +111,7 @@ impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
 // Methods for preparing device state. Configuraion, random nonce and key creation and so on.
 impl<'a, PHY, D> TrustAndGo<'a, PHY, D>
 where
-    PHY: Read + Write,
-    <PHY as Read>::Error: Debug,
-    <PHY as Write>::Error: Debug,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     // Slot config
@@ -170,9 +149,7 @@ where
 // On creation of TNG object, enforce stateful configuration.
 impl<'a, PHY, D> TryFrom<&'a mut AtCaClient<PHY, D>> for TrustAndGo<'a, PHY, D>
 where
-    PHY: Read + Write,
-    <PHY as Read>::Error: Debug,
-    <PHY as Write>::Error: Debug,
+    PHY: i2c::I2c,
     D: DelayUs,
 {
     type Error = Error;
