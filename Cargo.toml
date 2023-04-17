@@ -18,7 +18,7 @@ defmt = { version = "^0.3", optional = true }
 
 
 [dependencies.embedded-hal]
-version = "=1.0.0-alpha.9"
+version = "=1.0.0-alpha.10"
 
 [dependencies.signature]
 version = "1.2.2"
