@@ -13,7 +13,7 @@ use super::{Block, Digest, Signature};
 use core::cell::RefCell;
 use core::convert::TryInto;
 use core::convert::{identity, TryFrom};
-use embedded_hal::delay::DelayUs;
+use embedded_hal::delay::DelayNs;
 use embedded_hal::i2c;
 use heapless::Vec;
 
@@ -28,7 +28,7 @@ impl<'a, PHY, D> From<Verify<'a, PHY, D>> for Verifier<'a, PHY, D> {
 impl<'a, PHY, D> signature::Verifier<Signature> for Verifier<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
         let digest = self
@@ -63,7 +63,7 @@ impl<'a, PHY, D> From<Sign<'a, PHY, D>> for Signer<'a, PHY, D> {
 impl<'a, PHY, D> signature::Signer<Signature> for Signer<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
         let digest = self
@@ -134,7 +134,7 @@ impl<PHY, D> AtCaClient<PHY, D> {
 impl<PHY, D> AtCaClient<PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     fn execute(&mut self, packet: Packet) -> Result<Response<'_>, Error> {
         let exec_time = self.clock_divider.execution_time(packet.opcode());
@@ -216,7 +216,7 @@ impl<'a, PHY, D> Memory<'a, PHY, D> {
 impl<'a, PHY, D> Memory<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     pub fn serial_number(&mut self) -> Result<Serial, Error> {
         let packet =
@@ -406,7 +406,7 @@ pub struct Aes<'a, PHY, D> {
 impl<'a, PHY, D> Aes<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     pub fn encrypt(&mut self, plaintext: &[u8], ciphertext: &mut [u8]) -> Result<(), Error> {
         use command::Aes as AesCmd;
@@ -470,7 +470,7 @@ pub struct Sha<'a, PHY, D> {
 impl<'a, PHY, D> Sha<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     pub fn init(&mut self) -> Result<(), Error> {
         let packet = command::Sha::new(self.atca.packet_builder()).start()?;
@@ -525,7 +525,7 @@ pub struct Sign<'a, PHY, D> {
 impl<'a, PHY, D> Sign<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message.
@@ -548,7 +548,7 @@ pub struct Verify<'a, PHY, D> {
 impl<'a, PHY, D> Verify<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message and signature.

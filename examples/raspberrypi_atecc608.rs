@@ -10,8 +10,7 @@ use at_cryptoauth::memory::{Size, Slot, Zone};
 use at_cryptoauth::tngtls::{AES_KEY, AUTH_PRIVATE_KEY, SIGN_PRIVATE_KEY, USER_PRIVATE_KEY1};
 use at_cryptoauth::{AtCaClient, Block};
 use core::fmt::Debug;
-use embedded_hal::delay::DelayUs;
-use embedded_hal::i2c::{Read, Write};
+use embedded_hal::delay::DelayNs embedded_hal::i2c::{Read, Write};
 use linux_embedded_hal::Delay;
 use linux_embedded_hal::I2cdev;
 use log::info;
@@ -206,7 +205,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayNs,
 {
     let mut test_private_key = Block::default();
     test_private_key.as_mut().copy_from_slice(&TEST_PRIVATE_KEY);
@@ -225,7 +224,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayNs,
 {
     let result = atca
         .create_private_key(key_id)
@@ -251,7 +250,7 @@ where
     PHY: Read + Write,
     <PHY as Read>::Error: Debug,
     <PHY as Write>::Error: Debug,
-    D: DelayUs<u32>,
+    D: DelayNs,
 {
     // Let OpenSSL create a key pair.
     let p256 = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).map_err(|e| format!("{}", e))?;
