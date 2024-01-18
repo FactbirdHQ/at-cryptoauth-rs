@@ -137,11 +137,11 @@ impl TryFrom<&[u8]> for Signature {
     }
 }
 
-impl signature::Signature for Signature {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, signature::Error> {
-        Self::try_from(bytes).map_err(|_| signature::Error::new())
-    }
-}
+// impl signature::Signature for Signature {
+//     fn from_bytes(bytes: &[u8]) -> Result<Self, signature::Error> {
+//         Self::try_from(bytes).map_err(|_| signature::Error::new())
+//     }
+// }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PublicKey {

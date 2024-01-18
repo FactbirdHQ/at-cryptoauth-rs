@@ -10,7 +10,6 @@ use at_cryptoauth::memory::{Size, Slot, Zone};
 use at_cryptoauth::tngtls::{AES_KEY, AUTH_PRIVATE_KEY, SIGN_PRIVATE_KEY, USER_PRIVATE_KEY1};
 use at_cryptoauth::{AtCaClient, Block};
 use core::fmt::Debug;
-use embedded_hal::delay::DelayNs embedded_hal::i2c::{Read, Write};
 use linux_embedded_hal::Delay;
 use linux_embedded_hal::I2cdev;
 use log::info;
@@ -65,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut i2c = I2cdev::new(I2C_PATH)?;
     i2c.set_slave_address(ATECC608_ADDR)?;
-    let mut atca = AtCaClient::new(i2c, Delay);
+    let mut atca = AtCaClient::new(i2c);
 
     // Imitate flash-time procedure.
     let revision = atca.info().map_err(|e| format!("{}", e))?;

@@ -169,15 +169,15 @@ mod tests {
     fn locate_index() {
         assert_eq!(
             (0, 5, 0),
-            Zone::locate_index(Memory::<(), ()>::SLOT_CONFIG_INDEX)
+            Zone::locate_index(Memory::<()>::SLOT_CONFIG_INDEX)
         );
         assert_eq!(
             (2, 6, 2),
-            Zone::locate_index(Memory::<(), ()>::CHIP_OPTIONS_INDEX)
+            Zone::locate_index(Memory::<()>::CHIP_OPTIONS_INDEX)
         );
         assert_eq!(
             (3, 0, 0),
-            Zone::locate_index(Memory::<(), ()>::KEY_CONFIG_INDEX)
+            Zone::locate_index(Memory::<()>::KEY_CONFIG_INDEX)
         );
     }
 

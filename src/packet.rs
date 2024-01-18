@@ -15,6 +15,7 @@ const CMD_SIZE_MIN: usize = 7;
 
 // Parameters to calculate CRC.
 const CUSTOM_ALG: Algorithm<u16> = Algorithm {
+    width: 16,
     poly: 0x8005,
     init: 0x0000,
     refin: true,

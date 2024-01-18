@@ -13,4 +13,4 @@ pub mod tngtls;
 pub use client::{AtCaClient, Memory, Verifier, Verify};
 pub use command::{Block, Digest, PublicKey, Signature};
 pub use packet::CRC16;
-pub use signature;
+// pub use async_signature;
