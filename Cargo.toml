@@ -1,53 +1,46 @@
 [package]
 name = "at-cryptoauth"
 version = "0.4.1-alpha.0"
-authors = ["Kei Shirakizawa <ks@blackbird.online>"]
+authors = ["The Factbird Team"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/BlackbirdHQ/at-cryptoauth-rs"
 documentation = "https://docs.rs/at-cryptoauth"
 description = "Driver for ATECC608 Crypto Authentication secure elements"
-edition = "2018"
+edition = "2021"
+
+[workspace]
+members = []
+default-members = ["."]
+exclude = ["examples"]
 
 [dependencies]
 crc = { version = "3.0", default-features = false }
 heapless = "0.8"
-generic-array = "1.0"
+bitfield-struct = "0.6.0"
+
 
 log = { version = "^0.4", default-features = false, optional = true }
 defmt = { version = "^0.3", optional = true }
 
+embedded-hal = { version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 
 embassy-time = { version = "0.3" }
+embassy-sync = { version = "0.5" }
+embassy-futures = { version = "0.1.1" }
 
-# async-signature = { version = "0.5", default-features = false, features = ["digest"] }
-# digest = { version = "0.10.7", default-features = false }
+signature = { version = "2.2", default-features = false, features = ["digest", "derive", "rand_core"] }
+# async-signature = { version = "0.5", default-features = false, features = ["digest", "rand_core"] }
+embedded-tls = { git = "https://github.com/drogue-iot/embedded-tls", rev = "f788e02", default-features = false, optional = true }
 
-# Dependencies for the STM32L4XX example
-[target.'cfg(all(target_arch = "arm", target_os = "none"))'.dev-dependencies]
-cortex-m = "0.7.2"
-cortex-m-rt = "0.7"
-cortex-m-semihosting = "0.5"
-panic-halt = "0.2.0"
-panic-semihosting = "0.6"
-
-# [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dev-dependencies.stm32l4xx-hal]
-# path = "../stm32l4xx-hal"
-# features = ["rt", "stm32l475"]
-
-# Dependencies for the RaspberryPi example
-[target.armv7-unknown-linux-gnueabihf.dependencies]
-env_logger = { version = "0.10", optional = true }
-# linux-embedded-hal = { version = "0.4.0-alpha.1", optional = true }
-openssl = { version = "0.10.30", features = ["vendored"], optional = true }
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa-core", "pkcs8"] }
+const-oid = { version = "0.9.6", features = ["db"] }
+der = { version = "0.7.8", features = ["derive", "flagset", "oid"] }
+spki = { version = "0.7.3" }
+pem-rfc7468 = { version = "0.7.0", optional = true }
+hex-literal = "0.4.1"
 
 [features]
-default = []
-std = ["env_logger", "log", "openssl"]
+default = ["embedded-tls", "pem"]
 
-[[example]]
-name = "raspberrypi_atecc608"
-required-features = ["std"]
-
-[[example]]
-name = "stm32l4xx_atecc608"
+pem = ["dep:pem-rfc7468"]

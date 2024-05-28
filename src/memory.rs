@@ -69,6 +69,7 @@ impl Zone {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Slot {
     /// PrivateKey0x contains 36 bytes, taking 2 block reads.
     PrivateKey00 = 0x00,
@@ -161,6 +162,7 @@ mod tests {
     use crate::client::Memory;
     use core::convert::identity;
     use core::iter::repeat;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use heapless::Vec;
     use Slot::*;
     use Zone::*;
@@ -169,15 +171,15 @@ mod tests {
     fn locate_index() {
         assert_eq!(
             (0, 5, 0),
-            Zone::locate_index(Memory::<()>::SLOT_CONFIG_INDEX)
+            Zone::locate_index(Memory::<NoopRawMutex, ()>::SLOT_CONFIG_INDEX)
         );
         assert_eq!(
             (2, 6, 2),
-            Zone::locate_index(Memory::<()>::CHIP_OPTIONS_INDEX)
+            Zone::locate_index(Memory::<NoopRawMutex, ()>::CHIP_OPTIONS_INDEX)
         );
         assert_eq!(
             (3, 0, 0),
-            Zone::locate_index(Memory::<()>::KEY_CONFIG_INDEX)
+            Zone::locate_index(Memory::<NoopRawMutex, ()>::KEY_CONFIG_INDEX)
         );
     }
 
