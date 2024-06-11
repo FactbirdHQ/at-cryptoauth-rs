@@ -26,7 +26,7 @@ embedded-hal = { version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 
 embassy-time = { version = "0.3" }
-embassy-sync = { version = "0.5" }
+embassy-sync = { version = "0.6" }
 embassy-futures = { version = "0.1.1" }
 
 signature = { version = "2.2", default-features = false, features = ["digest", "derive", "rand_core"] }

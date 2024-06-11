@@ -11,7 +11,7 @@ pub mod memory;
 mod packet;
 pub mod tngtls;
 
-pub use client::{AtCaClient, Memory, Random, Sign, SigningKey, Verify, VerifyingKey};
+pub use client::{AtCaClient, Memory, Random, SigningKey, VerifyingKey};
 pub use command::{Block, Digest, PublicKey};
 pub use packet::CRC16;
 pub use signature;

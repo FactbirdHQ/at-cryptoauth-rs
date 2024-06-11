@@ -8,7 +8,6 @@ use super::memory::{CertificateRepr, Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder, Response};
 use super::tngtls::TrustAndGo;
 use super::{Block, Digest, Signature};
-use core::cell::RefCell;
 use core::convert::TryFrom;
 use core::convert::TryInto;
 use core::num::NonZeroU32;
@@ -18,182 +17,6 @@ use heapless::Vec;
 use p256::ecdsa::DerSignature;
 use signature::hazmat::PrehashSigner;
 use signature::{rand_core, Keypair};
-
-pub struct VerifyingKey<'a, M: RawMutex, PHY>(RefCell<Verify<'a, M, PHY>>);
-
-impl<'a, M: RawMutex, PHY> From<Verify<'a, M, PHY>> for VerifyingKey<'a, M, PHY> {
-    fn from(verify: Verify<'a, M, PHY>) -> Self {
-        Self(RefCell::new(verify))
-    }
-}
-
-impl<'a, M, PHY> VerifyingKey<'a, M, PHY>
-where
-    PHY: embedded_hal_async::i2c::I2c,
-    M: RawMutex,
-{
-    pub async fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
-        let digest = self.0.borrow_mut().atca.sha().digest(msg).await?;
-        let key_id = self.0.borrow_mut().key_id.clone();
-        let public_key = self.0.borrow_mut().atca.generate_pubkey(key_id).await?;
-        self.0
-            .borrow_mut()
-            .verify_digest(&digest, signature, &public_key)
-            .await
-    }
-}
-
-impl<'a, M, PHY> VerifyingKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    M: RawMutex,
-{
-    pub fn verify_blocking(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
-        let digest = self.0.borrow_mut().atca.sha().digest_blocking(msg)?;
-        let key_id = self.0.borrow_mut().key_id.clone();
-        let public_key = self.0.borrow_mut().atca.generate_pubkey_blocking(key_id)?;
-        self.0
-            .borrow_mut()
-            .verify_digest_blocking(&digest, signature, &public_key)
-    }
-}
-
-impl<'a, M, PHY> signature::Verifier<Signature> for VerifyingKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    M: RawMutex,
-{
-    fn verify(&self, msg: &[u8], signature: &Signature) -> signature::Result<()> {
-        self.verify_blocking(msg, signature)
-            .map_err(|_| signature::Error::new())
-    }
-}
-
-pub struct SigningKey<'a, M: RawMutex, PHY>(RefCell<Sign<'a, M, PHY>>);
-
-impl<'a, M, PHY> Keypair for SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    M: RawMutex,
-{
-    type VerifyingKey = PublicKey;
-
-    fn verifying_key(&self) -> Self::VerifyingKey {
-        let signer = self.0.borrow_mut();
-        let key_id = signer.key_id;
-        signer.atca.generate_pubkey_blocking(key_id).unwrap()
-    }
-}
-
-impl<'a, M: RawMutex, PHY> From<Sign<'a, M, PHY>> for SigningKey<'a, M, PHY> {
-    fn from(sign: Sign<'a, M, PHY>) -> Self {
-        Self(RefCell::new(sign))
-    }
-}
-
-impl<'a, M, PHY> SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal_async::i2c::I2c,
-    M: RawMutex,
-{
-    pub async fn sign(&self, msg: &[u8]) -> Result<Signature, Error> {
-        let digest = self.0.borrow_mut().atca.sha().digest(msg).await?;
-        self.0.borrow_mut().sign_digest(&digest).await
-    }
-}
-
-impl<'a, M, PHY> SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    M: RawMutex,
-{
-    pub fn sign_blocking(&self, msg: &[u8]) -> Result<Signature, Error> {
-        let digest = self.0.borrow_mut().atca.sha().digest_blocking(msg)?;
-        self.0.borrow_mut().sign_digest_blocking(&digest)
-    }
-}
-
-impl<'a, M, PHY> PrehashSigner<Signature> for SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    M: RawMutex,
-{
-    fn sign_prehash(&self, prehash: &[u8]) -> signature::Result<Signature> {
-        let digest = self
-            .0
-            .borrow_mut()
-            .atca
-            .sha()
-            .digest_blocking(prehash)
-            .map_err(|_| signature::Error::new())?;
-        self.0
-            .borrow_mut()
-            .sign_digest_blocking(&digest)
-            .map_err(|_| signature::Error::new())
-    }
-}
-
-impl<'a, M, PHY, D> signature::DigestSigner<D, Signature> for SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    D: signature::digest::Digest,
-    M: RawMutex,
-{
-    fn try_sign_digest(&self, digest: D) -> signature::Result<Signature> {
-        self.sign_prehash(&digest.finalize())
-    }
-}
-
-impl<'a, M, PHY> signature::Signer<Signature> for SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    M: RawMutex,
-{
-    fn try_sign(&self, msg: &[u8]) -> signature::Result<Signature> {
-        let digest = self
-            .0
-            .borrow_mut()
-            .atca
-            .sha()
-            .digest_blocking(msg)
-            .map_err(|_| signature::Error::new())?;
-        self.0
-            .borrow_mut()
-            .sign_digest_blocking(&digest)
-            .map_err(|_| signature::Error::new())
-    }
-}
-
-impl<'a, M, PHY> PrehashSigner<DerSignature> for SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    M: RawMutex,
-{
-    fn sign_prehash(&self, prehash: &[u8]) -> signature::Result<DerSignature> {
-        PrehashSigner::<Signature>::sign_prehash(self, prehash).map(Into::into)
-    }
-}
-
-impl<'a, M, PHY, D> signature::DigestSigner<D, DerSignature> for SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    D: signature::digest::Digest,
-    M: RawMutex,
-{
-    fn try_sign_digest(&self, digest: D) -> signature::Result<DerSignature> {
-        signature::DigestSigner::<D, Signature>::try_sign_digest(self, digest).map(Into::into)
-    }
-}
-
-impl<'a, M, PHY> signature::Signer<DerSignature> for SigningKey<'a, M, PHY>
-where
-    PHY: embedded_hal::i2c::I2c,
-    M: RawMutex,
-{
-    fn try_sign(&self, msg: &[u8]) -> signature::Result<DerSignature> {
-        signature::Signer::<Signature>::try_sign(self, msg).map(Into::into)
-    }
-}
 
 struct Inner<PHY> {
     pub i2c: I2c<PHY>,
@@ -267,20 +90,12 @@ impl<M: RawMutex, PHY> AtCaClient<M, PHY> {
         }
     }
 
-    pub fn sign(&self, key_id: Slot) -> Sign<'_, M, PHY> {
-        Sign { atca: self, key_id }
-    }
-
-    pub fn verify(&self, key_id: Slot) -> Verify<'_, M, PHY> {
-        Verify { atca: self, key_id }
-    }
-
     pub fn signer(&self, key_id: Slot) -> SigningKey<'_, M, PHY> {
-        self.sign(key_id).into()
+        SigningKey { atca: self, key_id }
     }
 
     pub fn verifier(&self, key_id: Slot) -> VerifyingKey<'_, M, PHY> {
-        self.verify(key_id).into()
+        VerifyingKey { atca: self, key_id }
     }
 
     pub fn random(&self) -> Random<'_, M, PHY> {
@@ -1186,70 +1001,165 @@ where
 
 // Method signatures are taken from signature::DigestSigner.
 // Sign
-pub struct Sign<'a, M: RawMutex, PHY> {
+pub struct SigningKey<'a, M: RawMutex, PHY> {
     atca: &'a AtCaClient<M, PHY>,
     key_id: Slot,
 }
 
-impl<'a, M: RawMutex, PHY> Sign<'a, M, PHY> {
-    pub fn verifying_key(&'a mut self) -> Verify<'a, M, PHY> {
-        Verify {
+impl<'a, M: RawMutex, PHY> SigningKey<'a, M, PHY> {
+    pub fn verifying_key(&'a mut self) -> VerifyingKey<'a, M, PHY> {
+        VerifyingKey {
             atca: self.atca,
             key_id: self.key_id,
         }
     }
 }
 
-impl<'a, M, PHY> Sign<'a, M, PHY>
+impl<'a, M, PHY> SigningKey<'a, M, PHY>
 where
     PHY: embedded_hal_async::i2c::I2c,
     M: RawMutex,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message.
-    pub async fn sign_digest(&mut self, digest: &Digest) -> Result<Signature, Error> {
-        let mut inner = self.atca.inner.lock().await;
-
+    pub async fn sign_digest(&self, digest: &Digest) -> Result<Signature, Error> {
         // 1. Random value generation
         let mut data = [0u8; 32];
         self.atca.random().try_fill_bytes(&mut data).await?;
         // 2. Nonce load
         self.atca.write_message_digest_buffer(digest).await?;
         // 3. Sign
+        let mut inner = self.atca.inner.lock().await;
         let packet = command::Sign::new(inner.packet_builder()).external(self.key_id)?;
         let response = inner.execute(packet).await?;
         Signature::from_bytes(response.as_ref().into()).map_err(|_| ErrorKind::BadParam.into())
     }
+
+    pub async fn sign(&self, msg: &[u8]) -> Result<Signature, Error> {
+        let digest = self.atca.sha().digest(msg).await?;
+        self.sign_digest(&digest).await
+    }
 }
 
-impl<'a, M, PHY> Sign<'a, M, PHY>
+impl<'a, M, PHY> SigningKey<'a, M, PHY>
 where
     PHY: embedded_hal::i2c::I2c,
     M: RawMutex,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message.
-    pub fn sign_digest_blocking(&mut self, digest: &Digest) -> Result<Signature, Error> {
-        let mut inner = self.atca.inner.try_lock().unwrap();
-
+    pub fn sign_digest_blocking(&self, digest: &Digest) -> Result<Signature, Error> {
         // 1. Random value generation
         let mut data = [0u8; 32];
         self.atca.random().try_fill_bytes_blocking(&mut data)?;
         // 2. Nonce load
         self.atca.write_message_digest_buffer_blocking(digest)?;
         // 3. Sign
+        let mut inner = self.atca.inner.try_lock().unwrap();
         let packet = command::Sign::new(inner.packet_builder()).external(self.key_id)?;
         let response = inner.execute_blocking(packet)?;
         Signature::from_bytes(response.as_ref().into()).map_err(|_| ErrorKind::BadParam.into())
     }
+
+    pub fn sign_blocking(&self, msg: &[u8]) -> Result<Signature, Error> {
+        let digest = self.atca.sha().digest_blocking(msg)?;
+        self.sign_digest_blocking(&digest)
+    }
 }
 
-pub struct Verify<'a, M: RawMutex, PHY> {
+impl<'a, M, PHY> Keypair for SigningKey<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
+{
+    type VerifyingKey = PublicKey;
+
+    fn verifying_key(&self) -> Self::VerifyingKey {
+        let key_id = self.key_id;
+        self.atca.generate_pubkey_blocking(key_id).unwrap()
+    }
+}
+
+impl<'a, M, PHY> PrehashSigner<Signature> for SigningKey<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
+{
+    fn sign_prehash(&self, prehash: &[u8]) -> signature::Result<Signature> {
+        let digest = self
+            .atca
+            .sha()
+            .digest_blocking(prehash)
+            .map_err(|_| signature::Error::new())?;
+        self.sign_digest_blocking(&digest)
+            .map_err(|_| signature::Error::new())
+    }
+}
+
+impl<'a, M, PHY, D> signature::DigestSigner<D, Signature> for SigningKey<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    D: signature::digest::Digest,
+    M: RawMutex,
+{
+    fn try_sign_digest(&self, digest: D) -> signature::Result<Signature> {
+        self.sign_prehash(&digest.finalize())
+    }
+}
+
+impl<'a, M, PHY> signature::Signer<Signature> for SigningKey<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
+{
+    fn try_sign(&self, msg: &[u8]) -> signature::Result<Signature> {
+        let digest = self
+            .atca
+            .sha()
+            .digest_blocking(msg)
+            .map_err(|_| signature::Error::new())?;
+        self.sign_digest_blocking(&digest)
+            .map_err(|_| signature::Error::new())
+    }
+}
+
+impl<'a, M, PHY> PrehashSigner<DerSignature> for SigningKey<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
+{
+    fn sign_prehash(&self, prehash: &[u8]) -> signature::Result<DerSignature> {
+        PrehashSigner::<Signature>::sign_prehash(self, prehash).map(Into::into)
+    }
+}
+
+impl<'a, M, PHY, D> signature::DigestSigner<D, DerSignature> for SigningKey<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    D: signature::digest::Digest,
+    M: RawMutex,
+{
+    fn try_sign_digest(&self, digest: D) -> signature::Result<DerSignature> {
+        signature::DigestSigner::<D, Signature>::try_sign_digest(self, digest).map(Into::into)
+    }
+}
+
+impl<'a, M, PHY> signature::Signer<DerSignature> for SigningKey<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
+{
+    fn try_sign(&self, msg: &[u8]) -> signature::Result<DerSignature> {
+        signature::Signer::<Signature>::try_sign(self, msg).map(Into::into)
+    }
+}
+
+pub struct VerifyingKey<'a, M: RawMutex, PHY> {
     atca: &'a AtCaClient<M, PHY>,
     key_id: Slot,
 }
 
-impl<'a, M, PHY> Verify<'a, M, PHY>
+impl<'a, M, PHY> VerifyingKey<'a, M, PHY>
 where
     PHY: embedded_hal_async::i2c::I2c,
     M: RawMutex,
@@ -1257,7 +1167,7 @@ where
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message and signature.
     pub async fn verify_digest(
-        &mut self,
+        &self,
         digest: &Digest,
         signature: &Signature,
         public_key: &PublicKey,
@@ -1273,9 +1183,16 @@ where
 
         Ok(())
     }
+
+    pub async fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
+        let digest = self.atca.sha().digest(msg).await?;
+        let key_id = self.key_id.clone();
+        let public_key = self.atca.generate_pubkey(key_id).await?;
+        self.verify_digest(&digest, signature, &public_key).await
+    }
 }
 
-impl<'a, M, PHY> Verify<'a, M, PHY>
+impl<'a, M, PHY> VerifyingKey<'a, M, PHY>
 where
     PHY: embedded_hal::i2c::I2c,
     M: RawMutex,
@@ -1283,7 +1200,7 @@ where
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message and signature.
     pub fn verify_digest_blocking(
-        &mut self,
+        &self,
         digest: &Digest,
         signature: &Signature,
         public_key: &PublicKey,
@@ -1298,6 +1215,24 @@ where
         inner.execute_blocking(packet)?;
 
         Ok(())
+    }
+
+    pub fn verify_blocking(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
+        let digest = self.atca.sha().digest_blocking(msg)?;
+        let key_id = self.key_id.clone();
+        let public_key = self.atca.generate_pubkey_blocking(key_id)?;
+        self.verify_digest_blocking(&digest, signature, &public_key)
+    }
+}
+
+impl<'a, M, PHY> signature::Verifier<Signature> for VerifyingKey<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
+{
+    fn verify(&self, msg: &[u8], signature: &Signature) -> signature::Result<()> {
+        self.verify_blocking(msg, signature)
+            .map_err(|_| signature::Error::new())
     }
 }
 
