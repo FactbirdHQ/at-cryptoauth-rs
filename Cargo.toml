@@ -16,7 +16,7 @@ exclude = ["examples"]
 [dependencies]
 crc = { version = "3.0", default-features = false }
 heapless = "0.8"
-bitfield-struct = "0.6.0"
+bitfield-struct = "0.9"
 
 
 log = { version = "^0.4", default-features = false, optional = true }
@@ -29,11 +29,18 @@ embassy-time = { version = "0.3" }
 embassy-sync = { version = "0.6" }
 embassy-futures = { version = "0.1.1" }
 
-signature = { version = "2.2", default-features = false, features = ["digest", "derive", "rand_core"] }
+signature = { version = "2.2", default-features = false, features = [
+    "digest",
+    "derive",
+    "rand_core",
+] }
 # async-signature = { version = "0.5", default-features = false, features = ["digest", "rand_core"] }
-embedded-tls = { git = "https://github.com/drogue-iot/embedded-tls", rev = "9de49c2", default-features = false, optional = true }
+embedded-tls = { git = "https://github.com/drogue-iot/embedded-tls", rev = "7936bc1", default-features = false, optional = true }
 
-p256 = { version = "0.13.2", default-features = false, features = ["ecdsa-core", "pkcs8"] }
+p256 = { version = "0.13.2", default-features = false, features = [
+    "ecdsa-core",
+    "pkcs8",
+] }
 const-oid = { version = "0.9.6", features = ["db"] }
 der = { version = "0.7.8", features = ["derive", "flagset", "oid"] }
 spki = { version = "0.7.3" }

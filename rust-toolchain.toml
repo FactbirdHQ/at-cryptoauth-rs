@@ -1,7 +1,4 @@
 [toolchain]
-channel = "1.75"
-components = [ "rust-src", "rustfmt", "llvm-tools" ]
-targets = [
-    "thumbv6m-none-eabi",
-    "thumbv7em-none-eabihf",
-]
+channel = "1.80"
+components = ["rust-src", "rustfmt", "llvm-tools"]
+targets = ["thumbv6m-none-eabi", "thumbv7em-none-eabihf"]
