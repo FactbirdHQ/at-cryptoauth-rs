@@ -79,7 +79,7 @@ where
 impl<'a, PHY, D> signature::Signer<DerSignature> for Signer<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     fn try_sign(&self, msg: &[u8]) -> signature::Result<DerSignature> {
         signature::Signer::<Signature>::try_sign(self, msg).map(Into::into)
@@ -89,7 +89,7 @@ where
 impl<'a, PHY, D> signature::Keypair for Signer<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayUs,
+    D: DelayNs,
 {
     type VerifyingKey = PublicKey;
 
