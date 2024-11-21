@@ -11,7 +11,7 @@ use super::error::Error;
 use super::memory::{Size, Slot, Zone};
 use core::convert::TryFrom;
 use digest::{FixedOutputDirty, Reset, Update};
-use embedded_hal::delay::DelayNs;
+use embedded_hal::delay::DelayUs;
 use embedded_hal::i2c;
 use generic_array::typenum::U32;
 use generic_array::GenericArray;
@@ -37,7 +37,7 @@ impl<'a, PHY, D> From<Sha<'a, PHY, D>> for Hasher<'a, PHY, D> {
 impl<'a, PHY, D> Update for Hasher<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     fn update(&mut self, data: impl AsRef<[u8]>) {
         self.0.update(data).expect("update operation failed");
@@ -47,7 +47,7 @@ where
 impl<'a, PHY, D> FixedOutputDirty for Hasher<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     type OutputSize = U32;
     fn finalize_into_dirty(&mut self, out: &mut GenericArray<u8, Self::OutputSize>) {
@@ -59,7 +59,7 @@ where
 impl<'a, PHY, D> Reset for Hasher<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     fn reset(&mut self) {}
 }
@@ -112,7 +112,7 @@ impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
 impl<'a, PHY, D> TrustAndGo<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     // Slot config
     pub fn configure_permissions(&mut self) -> Result<(), Error> {
@@ -150,7 +150,7 @@ where
 impl<'a, PHY, D> TryFrom<&'a mut AtCaClient<PHY, D>> for TrustAndGo<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     type Error = Error;
     fn try_from(atca: &'a mut AtCaClient<PHY, D>) -> Result<Self, Self::Error> {

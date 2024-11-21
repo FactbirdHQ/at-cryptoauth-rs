@@ -6,7 +6,7 @@ use super::packet::{Packet, Response};
 use core::fmt::Debug;
 use core::iter::from_fn;
 use core::slice::from_ref;
-use embedded_hal::delay::DelayNs;
+use embedded_hal::delay::DelayUs;
 use embedded_hal::i2c;
 const WAKE_RESPONSE_EXPECTED: &[u8] = &[0x04, 0x11, 0x33, 0x43];
 const WAKE_SELFTEST_FAILED: &[u8] = &[0x04, 0x07, 0xC4, 0x40];
@@ -51,7 +51,7 @@ impl<PHY, D> I2c<PHY, D> {
 impl<PHY, D> I2c<PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     /// Wakes up device, sends the packet, waits for command completion,
     /// receives response, and puts the device into the idle state.

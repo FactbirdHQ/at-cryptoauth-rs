@@ -13,7 +13,7 @@ use super::{Block, Digest};
 use core::cell::RefCell;
 use core::convert::TryInto;
 use core::convert::{identity, TryFrom};
-use embedded_hal::delay::DelayNs;
+use embedded_hal::delay::DelayUs;
 use embedded_hal::i2c;
 use heapless::Vec;
 use p256::ecdsa::DerSignature;
@@ -30,7 +30,7 @@ impl<'a, PHY, D> From<Verify<'a, PHY, D>> for Verifier<'a, PHY, D> {
 impl<'a, PHY, D> signature::Verifier<Signature> for Verifier<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
         let digest = self
@@ -59,7 +59,7 @@ pub struct Signer<'a, PHY, D>(RefCell<Sign<'a, PHY, D>>, Slot);
 impl<'a, PHY, D> signature::Signer<Signature> for Signer<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, signature::Error> {
         let digest = self
@@ -79,7 +79,7 @@ where
 impl<'a, PHY, D> signature::Signer<DerSignature> for Signer<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     fn try_sign(&self, msg: &[u8]) -> signature::Result<DerSignature> {
         signature::Signer::<Signature>::try_sign(self, msg).map(Into::into)
@@ -89,7 +89,7 @@ where
 impl<'a, PHY, D> signature::Keypair for Signer<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     type VerifyingKey = PublicKey;
 
@@ -153,7 +153,7 @@ impl<PHY, D> AtCaClient<PHY, D> {
 impl<PHY, D> AtCaClient<PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     fn execute(&mut self, packet: Packet) -> Result<Response<'_>, Error> {
         let exec_time = self.clock_divider.execution_time(packet.opcode());
@@ -236,7 +236,7 @@ impl<'a, PHY, D> Memory<'a, PHY, D> {
 impl<'a, PHY, D> Memory<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     pub fn serial_number(&mut self) -> Result<Serial, Error> {
         let packet =
@@ -426,7 +426,7 @@ pub struct Aes<'a, PHY, D> {
 impl<'a, PHY, D> Aes<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     pub fn encrypt(&mut self, plaintext: &[u8], ciphertext: &mut [u8]) -> Result<(), Error> {
         use command::Aes as AesCmd;
@@ -490,7 +490,7 @@ pub struct Sha<'a, PHY, D> {
 impl<'a, PHY, D> Sha<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     pub fn init(&mut self) -> Result<(), Error> {
         let packet = command::Sha::new(self.atca.packet_builder()).start()?;
@@ -545,7 +545,7 @@ pub struct Sign<'a, PHY, D> {
 impl<'a, PHY, D> Sign<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message.
@@ -569,7 +569,7 @@ pub struct Verify<'a, PHY, D> {
 impl<'a, PHY, D> Verify<'a, PHY, D>
 where
     PHY: i2c::I2c,
-    D: DelayNs,
+    D: DelayUs,
 {
     // Takes a 32-byte message to be signed, typically the SHA256 hash of the
     // full message and signature.
