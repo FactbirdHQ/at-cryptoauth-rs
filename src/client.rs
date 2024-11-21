@@ -9,13 +9,15 @@ use super::error::{Error, ErrorKind};
 use super::memory::{CertificateRepr, Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder, Response};
 use super::tngtls::TrustAndGo;
-use super::{Block, Digest, Signature};
+use super::{Block, Digest};
 use core::cell::RefCell;
 use core::convert::TryInto;
 use core::convert::{identity, TryFrom};
 use embedded_hal::delay::DelayNs;
 use embedded_hal::i2c;
 use heapless::Vec;
+use p256::ecdsa::DerSignature;
+use p256::ecdsa::Signature;
 
 pub struct Verifier<'a, PHY, D>(RefCell<Verify<'a, PHY, D>>);
 
@@ -52,13 +54,7 @@ where
     }
 }
 
-pub struct Signer<'a, PHY, D>(RefCell<Sign<'a, PHY, D>>);
-
-impl<'a, PHY, D> From<Sign<'a, PHY, D>> for Signer<'a, PHY, D> {
-    fn from(sign: Sign<'a, PHY, D>) -> Self {
-        Self(RefCell::new(sign))
-    }
-}
+pub struct Signer<'a, PHY, D>(RefCell<Sign<'a, PHY, D>>, Slot);
 
 impl<'a, PHY, D> signature::Signer<Signature> for Signer<'a, PHY, D>
 where
@@ -77,6 +73,29 @@ where
             .borrow_mut()
             .sign_digest(&digest)
             .map_err(|_| signature::Error::new())
+    }
+}
+
+impl<'a, PHY, D> signature::Signer<DerSignature> for Signer<'a, PHY, D>
+where
+    PHY: i2c::I2c,
+    D: DelayUs,
+{
+    fn try_sign(&self, msg: &[u8]) -> signature::Result<DerSignature> {
+        signature::Signer::<Signature>::try_sign(self, msg).map(Into::into)
+    }
+}
+
+impl<'a, PHY, D> signature::Keypair for Signer<'a, PHY, D>
+where
+    PHY: i2c::I2c,
+    D: DelayUs,
+{
+    type VerifyingKey = PublicKey;
+
+    fn verifying_key(&self) -> Self::VerifyingKey {
+        let key_id = self.1;
+        self.0.borrow_mut().atca.generate_pubkey(key_id).unwrap()
     }
 }
 
@@ -142,7 +161,8 @@ where
     }
 
     pub fn signer(&mut self, key_id: Slot) -> Signer<'_, PHY, D> {
-        self.sign(key_id).into()
+        let sign = self.sign(key_id);
+        Signer(RefCell::new(sign), key_id)
     }
 
     pub fn verifier(&mut self, key_id: Slot) -> Verifier<'_, PHY, D> {
@@ -482,7 +502,7 @@ where
         let capacity = 0x40;
         let length = data.as_ref().len();
 
-        // Store remainging bytes for later processing
+        // Store remaining bytes for later processing
         let remainder_length = data.as_ref().len() % capacity;
         let (bytes, remainder) = data.as_ref().split_at(length - remainder_length);
         self.remaining_bytes.extend_from_slice(remainder).ok();
@@ -496,7 +516,7 @@ where
 
     pub fn chain(&mut self, data: impl AsRef<[u8]>) -> Result<&mut Self, Error> {
         if self.remaining_bytes.len() != 0 {
-            // TODO: Concatinate remaining bytes and input data.
+            // TODO: Concatenate remaining bytes and input data.
         }
 
         self.update(data)?;
@@ -536,7 +556,8 @@ where
         self.atca.write_message_digest_buffer(digest)?;
         // 3. Sign
         let packet = command::Sign::new(self.atca.packet_builder()).external(self.key_id)?;
-        self.atca.execute(packet)?.as_ref().try_into()
+        let response = self.atca.execute(packet)?;
+        Signature::from_bytes(response.as_ref().into()).map_err(|_| ErrorKind::BadParam.into())
     }
 }
 
