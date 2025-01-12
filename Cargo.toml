@@ -25,7 +25,7 @@ defmt = { version = "^0.3", optional = true }
 embedded-hal = { version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 
-embassy-time = { version = "0.3" }
+embassy-time = { version = "0.4" }
 embassy-sync = { version = "0.6" }
 embassy-futures = { version = "0.1.1" }
 
