@@ -126,7 +126,7 @@ impl<'a> From<&'a mut [u8]> for PacketBuilder<'a> {
     }
 }
 
-/// Assuming buffer is alocated elsewhere, `Packet` designates subslice in use.
+/// Assuming buffer is allocated elsewhere, `Packet` designates subslice in use.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Packet {
     opcode: OpCode,

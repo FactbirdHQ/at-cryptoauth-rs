@@ -465,6 +465,22 @@ where
         })
     }
 
+    // TODO: Testing purpose only.
+    pub async unsafe fn read_config(
+        &mut self,
+        size: Size,
+        block: u8,
+        offset: u8,
+    ) -> Result<heapless::Vec<u8, { Size::Block.len() }>, Error> {
+        let mut inner = self.atca.inner.lock().await;
+
+        let packet =
+            command::Read::new(inner.packet_builder()).read(Zone::Config, size, block, offset)?;
+        inner.execute(packet).await.and_then(|d| {
+            heapless::Vec::from_slice(d.as_ref()).map_err(|_| ErrorKind::SmallBuffer.into())
+        })
+    }
+
     pub async fn write_config(
         &mut self,
         size: Size,
@@ -902,7 +918,7 @@ where
         let capacity = 0x40;
         let length = data.as_ref().len();
 
-        // Store remainging bytes for later processing
+        // Store remaining bytes for later processing
         let remainder_length = data.as_ref().len() % capacity;
         let (bytes, remainder) = data.as_ref().split_at(length - remainder_length);
         self.remaining_bytes.extend_from_slice(remainder).ok();
@@ -960,7 +976,7 @@ where
         let capacity = 0x40;
         let length = data.as_ref().len();
 
-        // Store remainging bytes for later processing
+        // Store remaining bytes for later processing
         let remainder_length = data.as_ref().len() % capacity;
         let (bytes, remainder) = data.as_ref().split_at(length - remainder_length);
         self.remaining_bytes.extend_from_slice(remainder).ok();
