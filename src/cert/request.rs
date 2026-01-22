@@ -114,13 +114,28 @@ impl FixedTag for SignatureBitString {
 }
 
 impl<'a> DecodeValue<'a> for SignatureBitString {
-    fn decode_value<R: Reader<'a>>(_reader: &mut R, _header: Header) -> der::Result<Self> {
-        // let inner_len = (header.length - Length::ONE)?;
-        // let unused_bits = reader.read_byte()?;
-        // let inner = reader.read_vec(inner_len)?;
-        // Self::new(unused_bits, inner)
+    fn decode_value<R: Reader<'a>>(reader: &mut R, header: Header) -> der::Result<Self> {
+        let inner_len = (header.length - Length::ONE)?;
+        let unused_bits = reader.read_byte()?;
 
-        todo!()
+        // BIT STRING must have 0 unused bits for a valid DER signature
+        if unused_bits != 0 {
+            return Err(der::Tag::BitString.value_error());
+        }
+
+        // Read the DER-encoded signature bytes
+        let mut sig_bytes = [0u8; 128]; // Max DER signature size for P-256
+        let len = usize::try_from(inner_len)?;
+        if len > sig_bytes.len() {
+            return Err(der::ErrorKind::Length { tag: der::Tag::BitString }.into());
+        }
+        reader.read_into(&mut sig_bytes[..len])?;
+
+        // Parse as DER signature
+        let signature =
+            DerSignature::from_der(&sig_bytes[..len]).map_err(|_| der::Tag::BitString.value_error())?;
+
+        Ok(Self(signature))
     }
 }
 
@@ -153,13 +168,36 @@ impl FixedTag for PublicKeyBitString {
 }
 
 impl<'a> DecodeValue<'a> for PublicKeyBitString {
-    fn decode_value<R: Reader<'a>>(_reader: &mut R, _header: Header) -> der::Result<Self> {
-        // let inner_len = (header.length - Length::ONE)?;
-        // let unused_bits = reader.read_byte()?;
-        // let inner = reader.read_vec(inner_len)?;
-        // Self::new(unused_bits, inner)
+    fn decode_value<R: Reader<'a>>(reader: &mut R, header: Header) -> der::Result<Self> {
+        let inner_len = (header.length - Length::ONE)?;
+        let unused_bits = reader.read_byte()?;
 
-        todo!()
+        // BIT STRING must have 0 unused bits for a valid public key
+        if unused_bits != 0 {
+            return Err(der::Tag::BitString.value_error());
+        }
+
+        // Read the SEC1-encoded public key bytes (uncompressed: 0x04 || X || Y)
+        let len = usize::try_from(inner_len)?;
+        let mut point_bytes = [0u8; 65]; // 1 byte tag + 32 bytes X + 32 bytes Y
+        if len > point_bytes.len() {
+            return Err(der::ErrorKind::Length { tag: der::Tag::BitString }.into());
+        }
+        reader.read_into(&mut point_bytes[..len])?;
+
+        // Parse SEC1 encoded point
+        let point = EncodedPoint::from_bytes(&point_bytes[..len])
+            .map_err(|_| der::Tag::BitString.value_error())?;
+
+        // Extract X and Y coordinates into PublicKey
+        let x = point.x().ok_or_else(|| der::Tag::BitString.value_error())?;
+        let y = point.y().ok_or_else(|| der::Tag::BitString.value_error())?;
+
+        let mut pubkey = PublicKey::default();
+        pubkey.as_mut()[..32].copy_from_slice(x.as_slice());
+        pubkey.as_mut()[32..].copy_from_slice(y.as_slice());
+
+        Ok(Self(pubkey))
     }
 }
 

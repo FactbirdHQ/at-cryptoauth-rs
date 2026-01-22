@@ -93,6 +93,16 @@ impl TryFrom<&[u8]> for Serial {
     }
 }
 
+impl Serial {
+    /// Create a Serial from a 9-byte array (for testing purposes)
+    #[cfg(test)]
+    pub fn new_for_test(bytes: &[u8; 9]) -> Self {
+        Self {
+            value: (*bytes).into(),
+        }
+    }
+}
+
 impl AsRef<[u8]> for Serial {
     fn as_ref(&self) -> &[u8] {
         self.value.as_ref()

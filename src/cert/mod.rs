@@ -1,6 +1,7 @@
 pub mod attr;
 pub mod builder;
 pub mod certificate;
+pub mod compressed;
 pub mod ext;
 mod macros;
 pub mod name;

@@ -1,15 +1,8 @@
-use core::{cmp::Ordering, ops::Range};
+use core::cmp::Ordering;
 
-use bitfield_struct::bitfield;
 use der::{asn1::BitStringRef, Decode, Enumerated, Sequence, ValueOrd};
 use pem_rfc7468::PemLabel;
 use spki::{AlgorithmIdentifierRef, SubjectPublicKeyInfoRef};
-
-use crate::{
-    error::{Error, ErrorKind},
-    memory::Slot,
-    AtCaClient,
-};
 
 use super::{name::Name, serial_number::SerialNumber, time::Validity};
 

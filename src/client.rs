@@ -499,6 +499,97 @@ where
         )?;
         inner.execute(packet).await.map(drop)
     }
+
+    /// Read a compressed certificate from a certificate slot
+    ///
+    /// Certificate slots (0x09-0x0f) store 72-byte compressed certificates.
+    pub async fn read_compressed_cert(
+        &mut self,
+        slot: Slot,
+    ) -> Result<crate::cert::compressed::CompressedCertificate, Error> {
+        use crate::memory::CompressedCertRepr;
+
+        if !slot.is_certificate() {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let mut cert_data = [0u8; crate::cert::compressed::CompressedCertificate::SIZE];
+        let mut offset = 0;
+
+        for (i, ranges) in CompressedCertRepr::new().enumerate() {
+            let mut inner = self.atca.inner.lock().await;
+            let packet = command::Read::new(inner.packet_builder()).slot(slot, i as u8)?;
+
+            let response = inner.execute(packet).await?;
+            for range in ranges {
+                let dst = offset..offset + range.len();
+                cert_data[dst].copy_from_slice(&response.as_ref()[range.clone()]);
+                offset += range.len();
+            }
+        }
+
+        Ok(crate::cert::compressed::CompressedCertificate::new(cert_data))
+    }
+
+    /// Write a compressed certificate to a certificate slot
+    ///
+    /// Certificate slots (0x09-0x0f) store 72-byte compressed certificates.
+    pub async fn write_compressed_cert(
+        &mut self,
+        slot: Slot,
+        cert: &crate::cert::compressed::CompressedCertificate,
+    ) -> Result<(), Error> {
+        use crate::memory::CompressedCertRepr;
+
+        if !slot.is_certificate() {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let mut data = Block::default();
+        let mut offset = 0;
+
+        for (i, ranges) in CompressedCertRepr::new().enumerate() {
+            let mut inner = self.atca.inner.lock().await;
+            // Initialize block sized buffer
+            data.as_mut().iter_mut().for_each(|value| *value = 0);
+
+            for range in ranges {
+                let src = offset..offset + range.len();
+                data.as_mut()[range.clone()].copy_from_slice(&cert.as_ref()[src]);
+                offset += range.len();
+            }
+
+            let packet = command::Write::new(inner.packet_builder()).slot(slot, i as u8, &data)?;
+            inner.execute(packet).await?;
+        }
+        Ok(())
+    }
+
+    /// Read and reconstruct a full certificate using a certificate definition
+    ///
+    /// This reads the compressed certificate from the device, generates the serial
+    /// number, and reconstructs the full DER-encoded certificate.
+    pub async fn read_certificate<'b>(
+        &mut self,
+        def: &crate::cert::compressed::CertificateDefinition<'_>,
+        output: &'b mut [u8],
+    ) -> Result<usize, Error> {
+        // Read the compressed certificate
+        let compressed = self.read_compressed_cert(def.compressed_slot).await?;
+
+        // Read the public key
+        let public_key = self.pubkey(def.public_key_slot).await?;
+
+        // Get device serial and generate certificate serial number
+        let device_serial = self.serial_number().await?;
+        let mut serial_buf = [0u8; 16];
+        let serial = def
+            .serial_source
+            .generate(&device_serial, compressed.signer_id(), &mut serial_buf)?;
+
+        // Reconstruct the full certificate
+        def.reconstruct(&compressed, &public_key, serial, output)
+    }
 }
 
 impl<'a, M, PHY> Memory<'a, M, PHY>
@@ -710,6 +801,97 @@ where
             data,
         )?;
         inner.execute_blocking(packet).map(drop)
+    }
+
+    /// Read a compressed certificate from a certificate slot (blocking)
+    ///
+    /// Certificate slots (0x09-0x0f) store 72-byte compressed certificates.
+    pub fn read_compressed_cert_blocking(
+        &mut self,
+        slot: Slot,
+    ) -> Result<crate::cert::compressed::CompressedCertificate, Error> {
+        use crate::memory::CompressedCertRepr;
+
+        if !slot.is_certificate() {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let mut cert_data = [0u8; crate::cert::compressed::CompressedCertificate::SIZE];
+        let mut offset = 0;
+        let mut inner = self.atca.inner.try_lock().unwrap();
+
+        for (i, ranges) in CompressedCertRepr::new().enumerate() {
+            let packet = command::Read::new(inner.packet_builder()).slot(slot, i as u8)?;
+
+            let response = inner.execute_blocking(packet)?;
+            for range in ranges {
+                let dst = offset..offset + range.len();
+                cert_data[dst].copy_from_slice(&response.as_ref()[range.clone()]);
+                offset += range.len();
+            }
+        }
+
+        Ok(crate::cert::compressed::CompressedCertificate::new(cert_data))
+    }
+
+    /// Write a compressed certificate to a certificate slot (blocking)
+    ///
+    /// Certificate slots (0x09-0x0f) store 72-byte compressed certificates.
+    pub fn write_compressed_cert_blocking(
+        &mut self,
+        slot: Slot,
+        cert: &crate::cert::compressed::CompressedCertificate,
+    ) -> Result<(), Error> {
+        use crate::memory::CompressedCertRepr;
+
+        if !slot.is_certificate() {
+            return Err(ErrorKind::BadParam.into());
+        }
+
+        let mut data = Block::default();
+        let mut offset = 0;
+        let mut inner = self.atca.inner.try_lock().unwrap();
+
+        for (i, ranges) in CompressedCertRepr::new().enumerate() {
+            // Initialize block sized buffer
+            data.as_mut().iter_mut().for_each(|value| *value = 0);
+
+            for range in ranges {
+                let src = offset..offset + range.len();
+                data.as_mut()[range.clone()].copy_from_slice(&cert.as_ref()[src]);
+                offset += range.len();
+            }
+
+            let packet = command::Write::new(inner.packet_builder()).slot(slot, i as u8, &data)?;
+            inner.execute_blocking(packet)?;
+        }
+        Ok(())
+    }
+
+    /// Read and reconstruct a full certificate using a certificate definition (blocking)
+    ///
+    /// This reads the compressed certificate from the device, generates the serial
+    /// number, and reconstructs the full DER-encoded certificate.
+    pub fn read_certificate_blocking<'b>(
+        &mut self,
+        def: &crate::cert::compressed::CertificateDefinition<'_>,
+        output: &'b mut [u8],
+    ) -> Result<usize, Error> {
+        // Read the compressed certificate
+        let compressed = self.read_compressed_cert_blocking(def.compressed_slot)?;
+
+        // Read the public key
+        let public_key = self.pubkey_blocking(def.public_key_slot)?;
+
+        // Get device serial and generate certificate serial number
+        let device_serial = self.serial_number_blocking()?;
+        let mut serial_buf = [0u8; 16];
+        let serial = def
+            .serial_source
+            .generate(&device_serial, compressed.signer_id(), &mut serial_buf)?;
+
+        // Reconstruct the full certificate
+        def.reconstruct(&compressed, &public_key, serial, output)
     }
 }
 
