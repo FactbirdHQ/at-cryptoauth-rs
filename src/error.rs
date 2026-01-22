@@ -1,3 +1,31 @@
+//! Error types for ATECC608 communication and operations.
+//!
+//! This module provides error handling for all ATECC608 operations, including:
+//!
+//! - **Device errors** ([`Status`]): Errors returned by the ATECC608 device itself
+//! - **Driver errors** ([`ErrorKind`]): Communication and validation errors
+//!
+//! ## Example
+//!
+//! ```ignore
+//! use at_cryptoauth::error::{Error, ErrorKind};
+//!
+//! fn example() -> Result<(), Error> {
+//!     // Operations return Result<T, Error>
+//!     let info = client.info().await?;
+//!
+//!     // Check specific error kinds
+//!     match some_operation() {
+//!         Err(e) if e.code() == ErrorKind::MutexLocked as u32 => {
+//!             // Handle concurrent access
+//!         }
+//!         Err(e) => return Err(e),
+//!         Ok(v) => { /* ... */ }
+//!     }
+//!     Ok(())
+//! }
+//! ```
+
 use core::convert::TryFrom;
 
 /// An error type representing ATECC608's erroneous conditions.
@@ -153,6 +181,8 @@ pub enum ErrorKind {
     UseFlagsConsumed = 0xFC,
     /// Device did not respond to wake call as expected
     WakeFailed = 0xD0,
+    /// Mutex is already locked (blocking API contention)
+    MutexLocked = 0xD1,
 }
 
 impl core::fmt::Display for ErrorKind {
@@ -200,6 +230,7 @@ impl core::fmt::Display for ErrorKind {
                 write!(fmt, "use flags on the device indicates its consumed fully")
             }
             Self::WakeFailed => write!(fmt, "device did not respond to wake call as expected"),
+            Self::MutexLocked => write!(fmt, "mutex is already locked (blocking API contention)"),
         }
     }
 }

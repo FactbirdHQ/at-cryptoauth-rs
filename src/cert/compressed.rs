@@ -106,6 +106,30 @@ impl CompressedDate {
         let cleared = self.0 & !(Self::EXPIRE_MASK << Self::EXPIRE_OFFSET);
         Self(cleared | (((years as u32) & Self::EXPIRE_MASK) << Self::EXPIRE_OFFSET))
     }
+
+    /// Set month with validation (1-12)
+    pub fn with_month_checked(self, month: u8) -> Result<Self, Error> {
+        if month < 1 || month > 12 {
+            return Err(ErrorKind::BadParam.into());
+        }
+        Ok(self.with_month(month))
+    }
+
+    /// Set day with validation (1-31)
+    pub fn with_day_checked(self, day: u8) -> Result<Self, Error> {
+        if day < 1 || day > 31 {
+            return Err(ErrorKind::BadParam.into());
+        }
+        Ok(self.with_day(day))
+    }
+
+    /// Set hour with validation (0-23)
+    pub fn with_hour_checked(self, hour: u8) -> Result<Self, Error> {
+        if hour > 23 {
+            return Err(ErrorKind::BadParam.into());
+        }
+        Ok(self.with_hour(hour))
+    }
 }
 
 impl CompressedDate {
@@ -122,6 +146,11 @@ impl CompressedDate {
     pub fn from_validity(validity: &Validity) -> Result<Self, Error> {
         let issue_date = validity.not_before.to_date_time();
         let expire_date = validity.not_after.to_date_time();
+
+        // Validate notBefore < notAfter
+        if issue_date >= expire_date {
+            return Err(ErrorKind::BadParam.into());
+        }
 
         // Calculate year offset from 2000
         let year_offset = issue_date
