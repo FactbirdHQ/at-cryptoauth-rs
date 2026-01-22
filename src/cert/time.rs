@@ -1,8 +1,6 @@
 //! X.501 time types as defined in RFC 5280
 
-use core::convert::{TryFrom, TryInto};
 use core::fmt;
-
 use core::time::Duration;
 use der::asn1::{GeneralizedTime, UtcTime};
 use der::{Choice, DateTime, Sequence, ValueOrd};

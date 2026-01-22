@@ -246,6 +246,7 @@ pub trait Builder: Sized {
     fn build<S>(mut self, buf: &mut [u8], signer: &S) -> Result<Self::Output>
     where
         S: Signer<DerSignature>,
+        S: Keypair,
         S: Keypair<VerifyingKey = PublicKey>,
     {
         let len = self.finalize(buf, signer)?;
@@ -263,6 +264,7 @@ pub trait Builder: Sized {
     ) -> Result<Self::Output>
     where
         S: RandomizedSigner<DerSignature>,
+        S: Keypair,
         S: Keypair<VerifyingKey = PublicKey>,
     {
         let len = self.finalize(buf, signer)?;

@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 mod fmt;
 
+pub mod cert;
 mod client;
 mod clock_divider;
 mod command;
@@ -14,6 +15,10 @@ pub use client::{AtCaClient, Memory, Random, SigningKey, VerifyingKey};
 pub use command::{Block, Digest, PublicKey};
 pub use packet::CRC16;
 pub use signature;
+
+pub use der;
+pub use pem_rfc7468;
+pub use spki;
 
 pub use p256::ecdsa::Signature;
 
