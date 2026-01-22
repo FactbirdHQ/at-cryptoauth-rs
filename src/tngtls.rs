@@ -9,12 +9,10 @@
 use super::client::{AtCaClient, Memory, Sha};
 use super::error::Error;
 use super::memory::{Size, Slot, Zone};
-use core::convert::TryFrom;
-use digest::{FixedOutputDirty, Reset, Update};
-use embedded_hal::delay::DelayUs;
-use embedded_hal::i2c;
-use generic_array::typenum::U32;
-use generic_array::GenericArray;
+use embassy_sync::blocking_mutex::raw::RawMutex;
+use signature::digest::{
+    consts::U32, generic_array::GenericArray, FixedOutput, OutputSizeUser, Reset, Update,
+};
 
 pub const AUTH_PRIVATE_KEY: Slot = Slot::PrivateKey00;
 pub const SIGN_PRIVATE_KEY: Slot = Slot::PrivateKey01;
@@ -27,48 +25,54 @@ pub const DEVICE_CERTIFICATE: Slot = Slot::Certificate0a;
 pub const SIGNER_PUBLIC_KEY: Slot = Slot::Certificate0b;
 pub const SIGNER_CERTIFICATE: Slot = Slot::Certificate0c;
 
-pub struct Hasher<'a, PHY, D>(Sha<'a, PHY, D>);
-impl<'a, PHY, D> From<Sha<'a, PHY, D>> for Hasher<'a, PHY, D> {
-    fn from(sha: Sha<'a, PHY, D>) -> Self {
+pub struct Hasher<'a, M: RawMutex, PHY>(Sha<'a, M, PHY>);
+impl<'a, M: RawMutex, PHY> From<Sha<'a, M, PHY>> for Hasher<'a, M, PHY> {
+    fn from(sha: Sha<'a, M, PHY>) -> Self {
         Self(sha)
     }
 }
 
-impl<'a, PHY, D> Update for Hasher<'a, PHY, D>
+impl<'a, M, PHY> Update for Hasher<'a, M, PHY>
 where
-    PHY: i2c::I2c,
-    D: DelayUs,
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
 {
-    fn update(&mut self, data: impl AsRef<[u8]>) {
-        self.0.update(data).expect("update operation failed");
+    fn update(&mut self, data: &[u8]) {
+        self.0.update(data)
     }
 }
 
-impl<'a, PHY, D> FixedOutputDirty for Hasher<'a, PHY, D>
-where
-    PHY: i2c::I2c,
-    D: DelayUs,
-{
+impl<'a, M: RawMutex, PHY> OutputSizeUser for Hasher<'a, M, PHY> {
     type OutputSize = U32;
-    fn finalize_into_dirty(&mut self, out: &mut GenericArray<u8, Self::OutputSize>) {
-        let digest = self.0.finalize().expect("finalize operation failed");
+}
+
+impl<'a, M, PHY> FixedOutput for Hasher<'a, M, PHY>
+where
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
+{
+    fn finalize_into(self, out: &mut GenericArray<u8, Self::OutputSize>) {
+        let digest = self
+            .0
+            .finalize_blocking()
+            .expect("finalize operation failed");
         out.as_mut_slice().copy_from_slice(digest.as_ref());
     }
 }
 
-impl<'a, PHY, D> Reset for Hasher<'a, PHY, D>
+impl<'a, M, PHY> Reset for Hasher<'a, M, PHY>
 where
-    PHY: i2c::I2c,
-    D: DelayUs,
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
 {
     fn reset(&mut self) {}
 }
 
-pub struct TrustAndGo<'a, PHY, D> {
-    atca: &'a mut AtCaClient<PHY, D>,
+pub struct TrustAndGo<'a, M: RawMutex, PHY> {
+    pub(crate) atca: &'a AtCaClient<M, PHY>,
 }
 
-impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
+impl<'a, M: RawMutex, PHY> TrustAndGo<'a, M, PHY> {
     // Miscellaneous device states.
     const TNG_TLS_SLOT_CONFIG_DATA: [u8; Size::Block as usize] = [
         // Index 20..=51, block = 0, offset = 5
@@ -109,69 +113,88 @@ impl<'a, PHY, D> TrustAndGo<'a, PHY, D> {
 }
 
 // Methods for preparing device state. Configuraion, random nonce and key creation and so on.
-impl<'a, PHY, D> TrustAndGo<'a, PHY, D>
+impl<'a, M, PHY> TrustAndGo<'a, M, PHY>
 where
-    PHY: i2c::I2c,
-    D: DelayUs,
+    PHY: embedded_hal_async::i2c::I2c,
+    M: RawMutex,
 {
     // Slot config
-    pub fn configure_permissions(&mut self) -> Result<(), Error> {
-        Self::TNG_TLS_SLOT_CONFIG_DATA
+    pub async fn configure_permissions(&mut self) -> Result<(), Error> {
+        for (i, word) in Self::TNG_TLS_SLOT_CONFIG_DATA
             .chunks(Size::Word.len())
             .enumerate()
-            .try_for_each(|(i, word)| {
-                let index = Memory::<PHY, D>::SLOT_CONFIG_INDEX + i * Size::Word.len();
-                let (block, offset, _) = Zone::locate_index(index);
-                self.atca
-                    .memory()
-                    .write_config(Size::Word, block, offset, word)
-                    .map(drop)
-            })
+        {
+            let index = Memory::<M, PHY>::SLOT_CONFIG_INDEX + i * Size::Word.len();
+            let (block, offset, _) = Zone::locate_index(index);
+            self.atca
+                .memory()
+                .write_config(Size::Word, block, offset, word)
+                .await?
+        }
+
+        Ok(())
     }
 
     // Chip options
-    pub fn configure_chip_options(&mut self) -> Result<(), Error> {
-        let (block, offset, _) = Zone::locate_index(Memory::<PHY, D>::CHIP_OPTIONS_INDEX);
+    pub async fn configure_chip_options(&mut self) -> Result<(), Error> {
+        let (block, offset, _) = Zone::locate_index(Memory::<M, PHY>::CHIP_OPTIONS_INDEX);
         self.atca
             .memory()
             .write_config(Size::Word, block, offset, &Self::TNG_TLS_CHIP_OPTIONS)
+            .await
     }
 
     // Key config
-    pub fn configure_key_types(&mut self) -> Result<(), Error> {
-        let (block, offset, _) = Zone::locate_index(Memory::<PHY, D>::KEY_CONFIG_INDEX);
+    pub async fn configure_key_types(&mut self) -> Result<(), Error> {
+        let (block, offset, _) = Zone::locate_index(Memory::<M, PHY>::KEY_CONFIG_INDEX);
         self.atca
             .memory()
             .write_config(Size::Block, block, offset, &Self::TNG_TLS_KEY_CONFIG_DATA)
+            .await
     }
 }
 
-// On creation of TNG object, enforce stateful configuration.
-impl<'a, PHY, D> TryFrom<&'a mut AtCaClient<PHY, D>> for TrustAndGo<'a, PHY, D>
+impl<'a, M, PHY> TrustAndGo<'a, M, PHY>
 where
-    PHY: i2c::I2c,
-    D: DelayUs,
+    PHY: embedded_hal::i2c::I2c,
+    M: RawMutex,
 {
-    type Error = Error;
-    fn try_from(atca: &'a mut AtCaClient<PHY, D>) -> Result<Self, Self::Error> {
-        let mut tng = Self { atca };
-        // Check if configuration zone is locked.
-        if !tng.atca.memory().is_locked(Zone::Config)? {
-            tng.configure_permissions()?;
-            tng.configure_chip_options()?;
-            tng.configure_key_types()?;
-            // Lock config zone
-            tng.atca.memory().lock(Zone::Config)?;
+    // Slot config
+    pub fn configure_permissions_blocking(&mut self) -> Result<(), Error> {
+        for (i, word) in Self::TNG_TLS_SLOT_CONFIG_DATA
+            .chunks(Size::Word.len())
+            .enumerate()
+        {
+            let index = Memory::<M, PHY>::SLOT_CONFIG_INDEX + i * Size::Word.len();
+            let (block, offset, _) = Zone::locate_index(index);
+            self.atca
+                .memory()
+                .write_config_blocking(Size::Word, block, offset, word)?
         }
 
-        // Check if data zone is locked.
-        if !tng.atca.memory().is_locked(Zone::Data)? {
-            // Only lock the data zone for release build
-            #[cfg(not(debug_assertions))]
-            tng.atca.memory().lock(Zone::Data)?;
-        }
+        Ok(())
+    }
 
-        Ok(tng)
+    // Chip options
+    pub fn configure_chip_options_blocking(&mut self) -> Result<(), Error> {
+        let (block, offset, _) = Zone::locate_index(Memory::<M, PHY>::CHIP_OPTIONS_INDEX);
+        self.atca.memory().write_config_blocking(
+            Size::Word,
+            block,
+            offset,
+            &Self::TNG_TLS_CHIP_OPTIONS,
+        )
+    }
+
+    // Key config
+    pub fn configure_key_types_blocking(&mut self) -> Result<(), Error> {
+        let (block, offset, _) = Zone::locate_index(Memory::<M, PHY>::KEY_CONFIG_INDEX);
+        self.atca.memory().write_config_blocking(
+            Size::Block,
+            block,
+            offset,
+            &Self::TNG_TLS_KEY_CONFIG_DATA,
+        )
     }
 }
 
@@ -181,6 +204,7 @@ mod tests {
     use crate::command::OpCode;
     use core::convert::TryInto;
     use core::ops::Deref;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use heapless::Vec;
     use OpCode::*;
     const KEY_TYPE_P256: u16 = 0x04; // P256 NIST ECC key
@@ -288,7 +312,7 @@ mod tests {
     }
 
     fn permission(key_id: Slot) -> u16 {
-        let data = &TrustAndGo::<(), ()>::TNG_TLS_SLOT_CONFIG_DATA;
+        let data = &TrustAndGo::<NoopRawMutex, ()>::TNG_TLS_SLOT_CONFIG_DATA;
         let index = key_id as usize * 2;
         let range = index..index + 2;
         data[range]
@@ -298,7 +322,7 @@ mod tests {
     }
 
     fn key_config(key_id: Slot) -> u16 {
-        let data = &TrustAndGo::<(), ()>::TNG_TLS_KEY_CONFIG_DATA;
+        let data = &TrustAndGo::<NoopRawMutex, ()>::TNG_TLS_KEY_CONFIG_DATA;
         let index = key_id as usize * 2;
         let range = index..index + 2;
         data[range]

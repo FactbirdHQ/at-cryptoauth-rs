@@ -6,6 +6,15 @@ pub struct Error {
     repr: Repr,
 }
 
+impl Error {
+    pub fn code(&self) -> u32 {
+        match self.repr {
+            Repr::Device(i) => i as u32,
+            Repr::Simple(i) => i as u32,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 enum Repr {
     Device(Status),

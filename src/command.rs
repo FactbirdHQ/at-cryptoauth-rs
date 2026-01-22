@@ -4,8 +4,8 @@ use super::error::{Error, ErrorKind};
 use super::memory::{Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder};
 use core::convert::TryFrom;
-use generic_array::typenum::{U32, U4, U64, U9};
-use generic_array::GenericArray;
+use signature::digest::generic_array::typenum::{U32, U4, U64, U9};
+use signature::digest::generic_array::GenericArray;
 
 // Encapsulates raw 4 bytes. When it is a return value of `info`, it contains
 // the device's revision number.
@@ -107,7 +107,7 @@ impl AsMut<[u8]> for Serial {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PublicKey {
-    pub value: GenericArray<u8, U64>,
+    pub(crate) value: GenericArray<u8, U64>,
 }
 
 impl AsRef<[u8]> for PublicKey {
@@ -169,7 +169,7 @@ impl TryFrom<&[u8]> for SharedSecret {
 // `GenericArray<u8, 32>` of `digest` crate.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Digest {
-    value: GenericArray<u8, U32>,
+    pub(crate) value: GenericArray<u8, U32>,
 }
 
 impl TryFrom<&[u8]> for Digest {
@@ -534,7 +534,7 @@ impl<'a> PrivWrite<'a> {
 impl<'a> Sha<'a> {
     /// Initialization, does not accept a message
     const MODE_SHA256_START: u8 = 0x00;
-    /// Add 64 bytes in the message to the SHA context
+    /// Add 64 bytes in the meesage to the SHA context
     const MODE_SHA256_UPDATE: u8 = 0x01;
     /// Complete the calculation and return the digest
     const MODE_SHA256_END: u8 = 0x02;
@@ -704,8 +704,23 @@ impl<'a> Read<'a> {
 
 /// Sign
 impl<'a> Sign<'a> {
-    const MODE_SOURCE_MSGDIGBUF: u8 = 0x20;
+    /// Sign mode bit 0: internal
+    #[allow(dead_code)]
+    const MODE_INTERNAL: u8 = 0x00;
+    /// Sign mode bit 1: Signature will be used for Verify(Invalidate)
+    #[allow(dead_code)]
+    const MODE_INVALIDATE: u8 = 0x01;
+    /// Sign mode bit 6: include serial number
+    #[allow(dead_code)]
+    const MODE_INCLUDE_SN: u8 = 0x40;
+    /// Sign mode bit 7: external
     const MODE_EXTERNAL: u8 = 0x80;
+
+    /// Sign mode message source is TempKey
+    #[allow(dead_code)]
+    const MODE_SOURCE_TEMPKEY: u8 = 0x00;
+    /// Sign mode message source is the Message Digest Buffer
+    const MODE_SOURCE_MSGDIGBUF: u8 = 0x20;
 
     pub(crate) fn new(builder: PacketBuilder<'a>) -> Self {
         Self(builder)
@@ -735,8 +750,7 @@ impl<'a> Verify<'a> {
         Self(builder)
     }
 
-    // Verify a 32-byte external message using the private key in the specified
-    // slot.
+    // Verify a 32-byte external message using the provided private key.
     pub(crate) fn external(
         &mut self,
         signature: &p256::ecdsa::Signature,
