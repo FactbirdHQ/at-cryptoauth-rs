@@ -1,7 +1,5 @@
 //! Attribute-related definitions as defined in X.501 (and updated by RFC 5280).
 
-use core::convert::TryFrom;
-
 use const_oid::db::Database;
 use der::asn1::{AnyRef, ObjectIdentifier, SetOf};
 use der::{Decode, Error, Sequence, ValueOrd};

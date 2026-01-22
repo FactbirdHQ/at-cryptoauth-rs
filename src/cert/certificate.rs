@@ -1,4 +1,3 @@
-use core::convert::{TryFrom, TryInto};
 use core::{cmp::Ordering, ops::Range};
 
 use bitfield_struct::bitfield;
@@ -288,7 +287,7 @@ mod tests {
         let mut encode_buf = [0u8; 1024];
         let cert = Certificate::from_pem(X509_CERT_PEM, &mut decode_buf).unwrap();
 
-        // println!("{:#?}", cert);
+        println!("{:#?}", cert);
         let der_bytes = cert.encode_to_slice(&mut encode_buf).unwrap();
         assert_eq!(X509_CERT_DER, der_bytes);
     }
