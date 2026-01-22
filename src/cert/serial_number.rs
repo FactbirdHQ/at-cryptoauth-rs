@@ -64,55 +64,6 @@ impl<'a> SerialNumber<'a> {
     }
 }
 
-// impl<'a> SerialNumber<'a> {
-//     /// Generates a random serial number from RNG.
-//     ///
-//     /// This follows the recommendation the CAB forum [ballot 164] and uses a minimum of 64 bits
-//     /// of output from the CSPRNG. This currently defaults to a 17-bytes long serial number.
-//     ///
-//     /// [ballot 164]: https://cabforum.org/2016/03/31/ballot-164/
-//     pub fn generate(rng: &mut impl CryptoRngCore) -> Result<Self> {
-//         Self::generate_with_prefix(&[], 17, rng)
-//     }
-
-//     /// Generates a random serial number from RNG. Include a prefix value.
-//     ///
-//     /// This follows the recommendation the CAB forum [ballot 164] and uses a minimum of 64 bits
-//     /// of output from the CSPRNG.
-//     ///
-//     /// The specified length does not include the length of the prefix, the maximum length must be
-//     /// equal or below 19 (to account for leading sign disambiguation, and the maximum length of 20).
-//     ///
-//     /// [ballot 164]: https://cabforum.org/2016/03/31/ballot-164/
-//     pub fn generate_with_prefix(
-//         prefix: &[u8],
-//         rand_len: usize,
-//         rng: &mut impl CryptoRngCore,
-//     ) -> Result<Self> {
-//         // CABF requires a minimum of 64 bits of random
-//         if rand_len < 8 {
-//             return Err(ErrorKind::Failed.into());
-//         }
-
-//         if rand_len + prefix.len() > 19 {
-//             return Err(ErrorKind::Failed.into());
-//         }
-
-//         let mut buf = vec![0; prefix.len() + rand_len];
-//         buf[..prefix.len()].copy_from_slice(prefix);
-
-//         let rand_buf = &mut buf[prefix.len()..];
-
-//         // Make sure the first byte isn't 0, [`Int`] will otherwise optimize out the leading zeros,
-//         // shorten the value of the serial and trigger false positives in linters.
-//         while rand_buf[0] == 0 {
-//             rng.fill_bytes(rand_buf);
-//         }
-
-//         Self::new(&buf)
-//     }
-// }
-
 impl<'a> EncodeValue for SerialNumber<'a> {
     fn value_len(&self) -> Result<Length> {
         self.inner.value_len()
@@ -152,24 +103,3 @@ impl Display for SerialNumber<'_> {
         Ok(())
     }
 }
-
-// macro_rules! impl_from {
-//     ($source:ty) => {
-//         impl From<$source> for SerialNumber<'_> {
-//             fn from(inner: $source) -> Self {
-//                 let serial_number = &inner.to_be_bytes()[..];
-//                 let serial_number = asn1::UintRef::new(serial_number).unwrap();
-
-//                 // This could only fail if the big endian representation was to be more than 20
-//                 // bytes long. Because it's only implemented for up to u64 / usize (8 bytes).
-//                 SerialNumber::new(serial_number.as_bytes()).unwrap()
-//             }
-//         }
-//     };
-// }
-
-// impl_from!(u8);
-// impl_from!(u16);
-// impl_from!(u32);
-// impl_from!(u64);
-// impl_from!(usize);

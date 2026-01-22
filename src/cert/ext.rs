@@ -6,8 +6,6 @@ use der::{
 };
 use spki::ObjectIdentifier;
 
-// pub mod pkix;
-
 /// Extension as defined in [RFC 5280 Section 4.1.2.9].
 ///
 /// The ASN.1 definition for Extension objects is below. The extnValue type
@@ -25,7 +23,6 @@ use spki::ObjectIdentifier;
 /// ```
 ///
 /// [RFC 5280 Section 4.1.2.9]: https://datatracker.ietf.org/doc/html/rfc5280#section-4.1.2.9
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Debug, Eq, PartialEq, Sequence, ValueOrd)]
 #[allow(missing_docs)]
 pub struct Extension<'a> {
@@ -45,25 +42,3 @@ pub struct Extension<'a> {
 ///
 /// [RFC 5280 Section 4.1.2.9]: https://datatracker.ietf.org/doc/html/rfc5280#section-4.1.2.9
 pub type Extensions<'a, const N: usize> = SequenceOf<Extension<'a>, N>;
-
-// /// Trait to be implemented by extensions to allow them to be formated as x509 v3 extensions by
-// /// builder.
-// pub trait AsExtension: AssociatedOid + der::Encode {
-//     /// Should the extension be marked critical
-//     fn critical(&self, subject: &Name<'_>, extensions: &[Extension]) -> bool;
-
-//     /// Returns the Extension with the content encoded.
-//     fn to_extension(
-//         &self,
-//         subject: &Name<'_>,
-//         extensions: &[Extension],
-//     ) -> Result<Extension, der::Error> {
-//         let content = OctetStringRef::new(<Self as der::Encode>::to_der(self)?)?;
-
-//         Ok(Extension {
-//             extn_id: <Self as AssociatedOid>::OID,
-//             critical: self.critical(subject, extensions),
-//             extn_value: content,
-//         })
-//     }
-// }

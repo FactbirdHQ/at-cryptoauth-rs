@@ -260,7 +260,6 @@ impl<'a> CertificateBuilder<'a> {
 /// Builder for X509 Certificate Requests
 pub struct RequestBuilder<'a> {
     info: CertReqInfo<'a>,
-    // extension_req: ExtensionReq,
 }
 
 impl<'a> RequestBuilder<'a> {
@@ -278,7 +277,6 @@ impl<'a> RequestBuilder<'a> {
         };
 
         let attributes = Default::default();
-        // let extension_req = Default::default();
 
         Ok(Self {
             info: CertReqInfo {
@@ -287,26 +285,8 @@ impl<'a> RequestBuilder<'a> {
                 public_key,
                 attributes,
             },
-            // extension_req,
         })
     }
-
-    // /// Add an extension to this certificate request
-    // pub fn add_extension<E: AsExtension>(&mut self, extension: &E) -> Result<()> {
-    //     let ext = extension.to_extension(&self.info.subject, &self.extension_req.0)?;
-
-    //     self.extension_req.0.push(ext);
-
-    //     Ok(())
-    // }
-
-    // /// Add an attribute to this certificate request
-    // pub fn add_attribute<A: AsAttribute>(&mut self, attribute: &A) -> Result<()> {
-    //     let attr = attribute.to_attribute()?;
-
-    //     self.info.attributes.insert(attr)?;
-    //     Ok(())
-    // }
 }
 
 /// Trait for X509 builders
@@ -371,10 +351,6 @@ impl<'a> Builder for RequestBuilder<'a> {
             },
             subject_public_key: PublicKeyBitString(signer.verifying_key()),
         };
-
-        // self.info
-        //     .attributes
-        //     .insert(self.extension_req.clone().try_into()?)?;
 
         let res = self.info.encode_to_slice(buf).map_err(Error::from)?;
         Ok(res.len())
