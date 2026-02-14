@@ -35,7 +35,7 @@ pub use signing::SigningKey;
 pub use verifying::VerifyingKey;
 
 use crate::clock_divider::ClockDivider;
-use crate::command::{Ecdh, GenKey, Info, NonceCtx, PrivWrite, PublicKey, SharedSecret, Word};
+use crate::command::{self, Ecdh, GenKey, Info, NonceCtx, PrivWrite, PublicKey, SharedSecret, Word};
 use crate::datalink::{I2c, I2cConfig};
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Slot, Zone};
@@ -58,7 +58,7 @@ impl<PHY> Inner<PHY> {
         self.buffer.clear();
         self.buffer
             .resize(capacity, 0x00u8)
-            .unwrap_or_else(|()| unreachable!("Input length equals to the current capacity."));
+            .unwrap_or_else(|_| unreachable!("Input length equals to the current capacity."));
         PacketBuilder::new(&mut self.buffer)
     }
 }
@@ -212,6 +212,28 @@ where
         let packet = Ecdh::new(inner.packet_builder()).diffie_hellman(key_id, public_key)?;
         inner.execute(packet).await?.as_ref().try_into()
     }
+
+    /// Verify a signature over a pre-hashed digest using an external public key.
+    ///
+    /// Atomically writes the digest to the message buffer and executes the
+    /// Verify command under a single lock acquisition.
+    pub async fn verify_external(
+        &self,
+        digest: &Digest,
+        signature: &p256::ecdsa::Signature,
+        public_key: &PublicKey,
+    ) -> Result<(), Error> {
+        let mut inner = self.inner.lock().await;
+
+        let packet = NonceCtx::new(inner.packet_builder()).message_digest_buffer(digest)?;
+        inner.execute(packet).await?;
+
+        let packet =
+            command::Verify::new(inner.packet_builder()).external(signature, public_key)?;
+        inner.execute(packet).await?;
+
+        Ok(())
+    }
 }
 
 impl<M, PHY> AtCaClient<M, PHY>
@@ -272,5 +294,27 @@ where
         let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
         let packet = Ecdh::new(inner.packet_builder()).diffie_hellman(key_id, public_key)?;
         inner.execute_blocking(packet)?.as_ref().try_into()
+    }
+
+    /// Verify a signature over a pre-hashed digest using an external public key.
+    ///
+    /// Atomically writes the digest to the message buffer and executes the
+    /// Verify command under a single lock acquisition.
+    pub fn verify_external_blocking(
+        &self,
+        digest: &Digest,
+        signature: &p256::ecdsa::Signature,
+        public_key: &PublicKey,
+    ) -> Result<(), Error> {
+        let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+
+        let packet = NonceCtx::new(inner.packet_builder()).message_digest_buffer(digest)?;
+        inner.execute_blocking(packet)?;
+
+        let packet =
+            command::Verify::new(inner.packet_builder()).external(signature, public_key)?;
+        inner.execute_blocking(packet)?;
+
+        Ok(())
     }
 }

@@ -1,7 +1,7 @@
 //! ECDSA signature verification operations
 
-use crate::command::{self, PublicKey};
-use crate::error::{Error, ErrorKind};
+use crate::command::PublicKey;
+use crate::error::Error;
 use crate::memory::Slot;
 use crate::{Digest, Signature};
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -18,29 +18,22 @@ where
     PHY: embedded_hal_async::i2c::I2c,
     M: RawMutex,
 {
-    /// Takes a 32-byte message to be signed, typically the SHA256 hash of the
-    /// full message and signature.
+    /// Takes a 32-byte digest (typically the SHA256 hash of the full message)
+    /// and verifies it against the provided signature and public key.
     pub async fn verify_digest(
         &self,
         digest: &Digest,
         signature: &Signature,
         public_key: &PublicKey,
     ) -> Result<(), Error> {
-        let mut inner = self.atca.inner.lock().await;
-
-        // 1. Nonce load
-        self.atca.write_message_digest_buffer(digest).await?;
-        // 2. Verify
-        let packet =
-            command::Verify::new(inner.packet_builder()).external(signature, public_key)?;
-        inner.execute(packet).await?;
-
-        Ok(())
+        self.atca
+            .verify_external(digest, signature, public_key)
+            .await
     }
 
     pub async fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
         let digest = self.atca.sha().digest(msg).await?;
-        let key_id = self.key_id.clone();
+        let key_id = self.key_id;
         let public_key = self.atca.generate_pubkey(key_id).await?;
         self.verify_digest(&digest, signature, &public_key).await
     }
@@ -51,33 +44,21 @@ where
     PHY: embedded_hal::i2c::I2c,
     M: RawMutex,
 {
-    /// Takes a 32-byte message to be signed, typically the SHA256 hash of the
-    /// full message and signature.
+    /// Takes a 32-byte digest (typically the SHA256 hash of the full message)
+    /// and verifies it against the provided signature and public key.
     pub fn verify_digest_blocking(
         &self,
         digest: &Digest,
         signature: &Signature,
         public_key: &PublicKey,
     ) -> Result<(), Error> {
-        let mut inner = self
-            .atca
-            .inner
-            .try_lock()
-            .map_err(|_| ErrorKind::MutexLocked)?;
-
-        // 1. Nonce load
-        self.atca.write_message_digest_buffer_blocking(digest)?;
-        // 2. Verify
-        let packet =
-            command::Verify::new(inner.packet_builder()).external(signature, public_key)?;
-        inner.execute_blocking(packet)?;
-
-        Ok(())
+        self.atca
+            .verify_external_blocking(digest, signature, public_key)
     }
 
     pub fn verify_blocking(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
         let digest = self.atca.sha().digest_blocking(msg)?;
-        let key_id = self.key_id.clone();
+        let key_id = self.key_id;
         let public_key = self.atca.generate_pubkey_blocking(key_id)?;
         self.verify_digest_blocking(&digest, signature, &public_key)
     }

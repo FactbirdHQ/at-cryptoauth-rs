@@ -10,7 +10,7 @@ edition = "2024"
 
 [dependencies]
 crc = { version = "3.0", default-features = false }
-heapless = "0.8"
+heapless = "0.9"
 bitfield-struct = "0.9"
 
 log = { version = "^0.4", default-features = false, optional = true }
@@ -29,7 +29,8 @@ signature = { version = "2.2", default-features = false, features = [
     "rand_core",
 ] }
 # async-signature = { version = "0.5", default-features = false, features = ["digest", "rand_core"] }
-embedded-tls = { git = "https://github.com/drogue-iot/embedded-tls", rev = "7936bc1", default-features = false, optional = true }
+embedded-tls = { git = "https://github.com/MathiasKoch/embedded-tls", branch = "move-certs-to-crypto-provider", default-features = false, optional = true }
+sha2 = { version = "0.10", default-features = false, optional = true }
 
 p256 = { version = "0.13.2", default-features = false, features = [
     "ecdsa-core",
@@ -43,5 +44,6 @@ hex-literal = "0.4.1"
 
 [features]
 default = ["embedded-tls", "pem"]
+embedded-tls = ["dep:embedded-tls", "dep:sha2"]
 
 pem = ["dep:pem-rfc7468"]
