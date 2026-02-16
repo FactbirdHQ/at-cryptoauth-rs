@@ -150,22 +150,82 @@ fn sec1_to_raw_pubkey(sec1: &[u8]) -> Result<PublicKey, TlsError> {
 }
 
 // ---------------------------------------------------------------------------
+// Flexible certificate and CA key sources
+// ---------------------------------------------------------------------------
+
+/// Source for the client certificate presented during mutual TLS.
+pub enum CertSource<'a> {
+    /// Pre-built DER-encoded X.509 certificate.
+    Der(&'a [u8]),
+    /// Compressed certificate reconstructed from ATECC608 at handshake time.
+    Compressed(CertificateDefinition<'a>),
+}
+
+impl<'a> From<&'a [u8]> for CertSource<'a> {
+    fn from(der: &'a [u8]) -> Self {
+        Self::Der(der)
+    }
+}
+
+impl<'a> From<CertificateDefinition<'a>> for CertSource<'a> {
+    fn from(def: CertificateDefinition<'a>) -> Self {
+        Self::Compressed(def)
+    }
+}
+
+/// Source for the root CA public key used to verify the server certificate chain.
+pub enum RootCaSource {
+    /// Raw 64-byte X||Y public key (provided directly or extracted from DER).
+    Key(PublicKey),
+    /// Public key read from an ATECC slot at verification time.
+    Stored(Slot),
+}
+
+impl From<PublicKey> for RootCaSource {
+    fn from(key: PublicKey) -> Self {
+        Self::Key(key)
+    }
+}
+
+impl From<Slot> for RootCaSource {
+    fn from(slot: Slot) -> Self {
+        Self::Stored(slot)
+    }
+}
+
+impl TryFrom<&[u8]> for RootCaSource {
+    type Error = TlsError;
+
+    /// Parse a DER-encoded X.509 certificate and extract the subject public key.
+    fn try_from(der: &[u8]) -> Result<Self, TlsError> {
+        let parsed = DecodedCertificate::from_der(der).map_err(|_| TlsError::DecodeError)?;
+        let spki_bytes = parsed
+            .tbs_certificate
+            .subject_public_key_info
+            .public_key
+            .as_bytes()
+            .ok_or(TlsError::DecodeError)?;
+        Ok(Self::Key(sec1_to_raw_pubkey(spki_bytes)?))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // AteccVerifier
 // ---------------------------------------------------------------------------
 
 pub struct AteccVerifier<'a, M: RawMutex, PHY> {
     atca: &'a AtCaClient<M, PHY>,
-    ca_pubkey_slot: Slot,
+    ca_pubkey_source: RootCaSource,
     host: Option<heapless::String<64>>,
     certificate_transcript: Option<sha2::Sha256>,
     server_public_key: Option<PublicKey>,
 }
 
 impl<'a, M: RawMutex, PHY> AteccVerifier<'a, M, PHY> {
-    fn new(atca: &'a AtCaClient<M, PHY>, ca_pubkey_slot: Slot) -> Self {
+    fn new(atca: &'a AtCaClient<M, PHY>, ca_pubkey_source: impl Into<RootCaSource>) -> Self {
         Self {
             atca,
-            ca_pubkey_slot,
+            ca_pubkey_source: ca_pubkey_source.into(),
             host: None,
             certificate_transcript: None,
             server_public_key: None,
@@ -190,12 +250,15 @@ where
         transcript: &sha2::Sha256,
         cert: CertificateRef,
     ) -> Result<(), TlsError> {
-        // Read CA public key from ATECC — used then dropped
-        let mut ca_pubkey = self
-            .atca
-            .memory()
-            .pubkey_blocking(self.ca_pubkey_slot)
-            .map_err(|_| TlsError::InvalidCertificate)?;
+        // Resolve CA public key from the configured source
+        let mut ca_pubkey = match &self.ca_pubkey_source {
+            RootCaSource::Key(key) => *key,
+            RootCaSource::Stored(slot) => self
+                .atca
+                .memory()
+                .pubkey_blocking(*slot)
+                .map_err(|_| TlsError::InvalidCertificate)?,
+        };
 
         let mut cn = None;
 
@@ -317,32 +380,36 @@ where
 pub struct AteccProvider<'a, M: RawMutex, PHY, const CERT_SIZE: usize = 0> {
     atca: &'a AtCaClient<M, PHY>,
     sign_key: Slot,
-    client_cert_def: Option<CertificateDefinition<'a>>,
+    client_cert_source: Option<CertSource<'a>>,
     verifier: AteccVerifier<'a, M, PHY>,
 }
 
 impl<'a, M: RawMutex, PHY> AteccProvider<'a, M, PHY, 0> {
-    pub fn new(atca: &'a AtCaClient<M, PHY>, sign_key: Slot, ca_pubkey_slot: Slot) -> Self {
+    pub fn new(
+        atca: &'a AtCaClient<M, PHY>,
+        sign_key: Slot,
+        ca_pubkey_source: impl Into<RootCaSource>,
+    ) -> Self {
         Self {
             atca,
             sign_key,
-            client_cert_def: None,
-            verifier: AteccVerifier::new(atca, ca_pubkey_slot),
+            client_cert_source: None,
+            verifier: AteccVerifier::new(atca, ca_pubkey_source),
         }
     }
 
     /// Enable client certificate authentication for mutual TLS.
     ///
-    /// `CERT_SIZE` controls the temporary stack buffer used to reconstruct
-    /// the DER certificate from the ATECC's compressed format.
+    /// `CERT_SIZE` controls the temporary stack buffer used when
+    /// reconstructing a compressed certificate, or copying a DER certificate.
     pub fn with_client_cert<const N: usize>(
         self,
-        def: CertificateDefinition<'a>,
+        cert: impl Into<CertSource<'a>>,
     ) -> AteccProvider<'a, M, PHY, N> {
         AteccProvider {
             atca: self.atca,
             sign_key: self.sign_key,
-            client_cert_def: Some(def),
+            client_cert_source: Some(cert.into()),
             verifier: self.verifier,
         }
     }
@@ -383,15 +450,22 @@ where
     }
 
     fn client_cert(&mut self) -> Option<Certificate<impl AsRef<[u8]>>> {
-        let def = self.client_cert_def.as_ref()?;
-        let mut buf = [0u8; CERT_SIZE];
-        let len = self
-            .atca
-            .memory()
-            .read_certificate_blocking(def, &mut buf)
-            .ok()?;
-        Some(Certificate::X509(
-            heapless::Vec::<u8, CERT_SIZE>::from_slice(&buf[..len]).ok()?,
-        ))
+        let source = self.client_cert_source.as_ref()?;
+        match source {
+            CertSource::Der(der) => Some(Certificate::X509(
+                heapless::Vec::<u8, CERT_SIZE>::from_slice(der).ok()?,
+            )),
+            CertSource::Compressed(def) => {
+                let mut buf = [0u8; CERT_SIZE];
+                let len = self
+                    .atca
+                    .memory()
+                    .read_certificate_blocking(def, &mut buf)
+                    .ok()?;
+                Some(Certificate::X509(
+                    heapless::Vec::<u8, CERT_SIZE>::from_slice(&buf[..len]).ok()?,
+                ))
+            }
+        }
     }
 }
