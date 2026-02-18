@@ -1,11 +1,10 @@
 #![no_std]
 #![no_main]
 
-use at_cryptoauth::{
-    AtCaClient, cert::attr::AttributeTypeAndValue, memory::Slot, signature::digest::const_oid,
-};
+use at_cryptoauth::AtCaClient;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -28,6 +27,7 @@ const SLOT_CONFIG_WRITE_KEY_MASK: u16 = 0b1111 << SLOT_CONFIG_WRITE_KEY_OFFSET;
 const SLOT_CONFIG_WRITE_CONFIG_OFFSET: u16 = 12;
 const SLOT_CONFIG_WRITE_CONFIG_MASK: u16 = 0b1111 << SLOT_CONFIG_WRITE_CONFIG_OFFSET;
 
+#[allow(dead_code)]
 fn dump_slot_config(value: u16) {
     defmt::info!("Decoding SlotConfig value = 0x{:04X}", value);
 
@@ -38,31 +38,31 @@ fn dump_slot_config(value: u16) {
     defmt::info!(" If slot contains ECC private keys:");
     defmt::info!(
         "  External signatures of arbitrary messages are enabled: {} ",
-        !!(value & SLOT_CONFIG_EXT_SIGN_ENABLED) != 0
+        (value & SLOT_CONFIG_EXT_SIGN_ENABLED) != 0
     );
     defmt::info!(
         "  Internal signatures are enabled: {} ",
-        !!(value & SLOT_CONFIG_INT_SIGN_ENABLED) != 0
+        (value & SLOT_CONFIG_INT_SIGN_ENABLED) != 0
     );
     defmt::info!(
         "  ECDH operation is permitted for this key: {} ",
-        !!(value & SLOT_CONFIG_ECDH_PERMITTED) != 0
+        (value & SLOT_CONFIG_ECDH_PERMITTED) != 0
     );
     defmt::info!(
         "   ECDH master secret output mode: {} ",
-        !!(value & SLOT_CONFIG_ECDH_MASTER_SECRET_MODE) != 0
+        (value & SLOT_CONFIG_ECDH_MASTER_SECRET_MODE) != 0
     );
 
-    defmt::info!("NoMac bit: {} ", !!(value & SLOT_CONFIG_NO_MAC) != 0);
+    defmt::info!("NoMac bit: {} ", (value & SLOT_CONFIG_NO_MAC) != 0);
     defmt::info!(
         "LimitedUse bit: {} ",
-        !!(value & SLOT_CONFIG_LIMITED_USE) != 0
+        (value & SLOT_CONFIG_LIMITED_USE) != 0
     );
     defmt::info!(
         "EncryptRead bit: {} ",
-        !!(value & SLOT_CONFIG_ENCRYPT_READ) != 0
+        (value & SLOT_CONFIG_ENCRYPT_READ) != 0
     );
-    defmt::info!("IsSecret bit: {} ", !!(value & SLOT_CONFIG_IS_SECRET) != 0);
+    defmt::info!("IsSecret bit: {} ", (value & SLOT_CONFIG_IS_SECRET) != 0);
     defmt::info!(
         "Write key: {}",
         (value & SLOT_CONFIG_WRITE_KEY_MASK) >> SLOT_CONFIG_WRITE_KEY_OFFSET
@@ -140,22 +140,13 @@ async fn main(_spawner: Spawner) {
 
     defmt::info!("Start testing ATECC608A.");
 
-    let mut client = AtCaClient::new(i2c);
+    let client: AtCaClient<NoopRawMutex, _> = AtCaClient::new(i2c);
 
     let info = client.info().await.unwrap();
     assert_eq!(info.as_ref(), [0x00, 0x00, 0x60, 0x02]);
 
-    // for slot in Slot::keys() {
-    //     defmt::warn!("##############################");
-    //     let locked = client.memory().is_slot_locked(slot).await.unwrap();
-    //     defmt::warn!("SLOT: {:?}. Locked: {}", slot, locked);
-    //     let slot_conf = client.memory().permission(slot).await.unwrap();
-    //     dump_slot_config(slot_conf);
-    //     embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
-    // }
-
     // Serial number bytes. Bytes positioned at 0..2 and 8 are fixed. Bytes at
-    // 2..8 are unique to indiviual modules.
+    // 2..8 are unique to individual modules.
     //
     // Example: [01, 23, 14, 16, 39, cd, d1, c1, ee]
     let sn = client.memory().serial_number().await.unwrap();
@@ -168,58 +159,6 @@ async fn main(_spawner: Spawner) {
         .await
         .unwrap();
 
-    let mut random = client.random();
-
-    let mut dest = [0u8; 32];
-    random.try_fill_bytes_blocking(&mut dest);
-    defmt::info!("Random bytes: {:#02x}", dest);
-
-    // let private_key = [
-    //     0x83, 0x28, 0xc5, 0x29, 0xd7, 0xf4, 0x16, 0xdb, 0x80, 0xb4, 0x86, 0x93, 0x6a, 0xd5, 0x8b,
-    //     0x4a, 0x3e, 0x34, 0xbc, 0x33, 0x8a, 0xc6, 0xdb, 0x7d, 0xc7, 0xbf, 0xa4, 0xb1, 0xa4, 0x1f,
-    //     0x0b, 0xe8,
-    // ];
-    // client
-    //     .write_private_key(Slot::PrivateKey02, &private_key[..].try_into().unwrap())
-    //     .await
-    //     .unwrap();
-
-    // let signature = client.signer(Slot::PrivateKey05).sign_async(b"Super secret message").await.unwrap();
-
-    // defmt::info!("Signature: {:?}", signature.as_ref());
-
-    let mut cn = at_cryptoauth::der::asn1::SetOf::new();
-    cn.insert(AttributeTypeAndValue {
-        oid: const_oid::db::rfc4519::CN,
-        value: at_cryptoauth::der::AnyRef::new(at_cryptoauth::der::Tag::Utf8String, b"factbird")
-            .unwrap(),
-    })
-    .unwrap();
-
-    let mut rdn_seq = at_cryptoauth::der::asn1::SequenceOf::new();
-    rdn_seq
-        .add(at_cryptoauth::cert::name::RelativeDistinguishedName(cn))
-        .unwrap();
-    let subject = at_cryptoauth::cert::name::RdnSequence(rdn_seq);
-
-    let signer = client.signer(Slot::PrivateKey02);
-    let builder = at_cryptoauth::cert::builder::RequestBuilder::new(subject)
-        .expect("Create certificate request");
-
-    let mut buf = [0u8; 128];
-    let cert_req =
-        at_cryptoauth::cert::builder::Builder::build::<_>(builder, &mut buf, &signer).unwrap();
-
-    defmt::info!("{:?}", &defmt::Debug2Format(&cert_req));
-
-    let mut pem_buf = [0u8; 512];
-
-    let pem_len = cert_req
-        .to_pem_slice(&mut pem_buf, at_cryptoauth::pem_rfc7468::LineEnding::LF)
-        .expect("generate pem");
-
-    defmt::info!("{=[u8]:a}", &pem_buf[..pem_len]);
-
     assert_eq!(
         digest.as_ref(),
         [
@@ -228,6 +167,11 @@ async fn main(_spawner: Spawner) {
             0x2d, 0x51, 0x1f, 0x43
         ]
     );
+
+    let mut random = client.random();
+    let mut dest = [0u8; 32];
+    random.try_fill_bytes(&mut dest).await.unwrap();
+    defmt::info!("Random bytes: {:#02x}", dest);
 
     defmt::info!("ATECC608A test finished.");
 }
