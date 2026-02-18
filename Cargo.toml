@@ -8,16 +8,10 @@ documentation = "https://docs.rs/at-cryptoauth"
 description = "Driver for ATECC608 Crypto Authentication secure elements"
 edition = "2024"
 
-[workspace]
-members = []
-default-members = ["."]
-exclude = ["examples"]
-
 [dependencies]
 crc = { version = "3.0", default-features = false }
 heapless = "0.8"
 bitfield-struct = "0.9"
-
 
 log = { version = "^0.4", default-features = false, optional = true }
 defmt = { version = "^0.3", optional = true }
