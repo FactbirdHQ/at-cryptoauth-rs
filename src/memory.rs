@@ -160,12 +160,12 @@ impl Iterator for CertificateRepr {
 mod tests {
     use super::*;
     use crate::client::Memory;
+    use Slot::*;
+    use Zone::*;
     use core::convert::identity;
     use core::iter::repeat;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use heapless::Vec;
-    use Slot::*;
-    use Zone::*;
 
     #[test]
     fn locate_index() {

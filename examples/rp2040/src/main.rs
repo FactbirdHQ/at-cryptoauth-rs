@@ -2,7 +2,7 @@
 #![no_main]
 
 use at_cryptoauth::{
-    cert::attr::AttributeTypeAndValue, memory::Slot, signature::digest::const_oid, AtCaClient,
+    AtCaClient, cert::attr::AttributeTypeAndValue, memory::Slot, signature::digest::const_oid,
 };
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;

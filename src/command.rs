@@ -4,8 +4,8 @@ use super::error::{Error, ErrorKind};
 use super::memory::{Size, Slot, Zone};
 use super::packet::{Packet, PacketBuilder};
 use core::convert::TryFrom;
-use signature::digest::generic_array::typenum::{U32, U4, U64, U9};
 use signature::digest::generic_array::GenericArray;
+use signature::digest::generic_array::typenum::{U4, U9, U32, U64};
 
 // Encapsulates raw 4 bytes. When it is a return value of `info`, it contains
 // the device's revision number.
