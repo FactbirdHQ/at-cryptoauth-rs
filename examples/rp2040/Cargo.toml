@@ -3,8 +3,16 @@ name = "at-cryptoauth-examples-rp2040"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "basic"
+path = "src/bin/basic.rs"
+
+[[bin]]
+name = "certificate"
+path = "src/bin/certificate.rs"
+
 [dependencies]
-at-cryptoauth = { path = "../../", features = ["defmt"] }
+at-cryptoauth = { path = "../../", features = ["defmt", "pem"], default-features = false }
 
 embassy-executor = { version = "0.9.1", features = [
     "arch-cortex-m",
@@ -20,6 +28,7 @@ embassy-rp = { version = "0.8.0", features = [
     "defmt",
     "rp2040",
     "time-driver",
+    "rp2040",
 ] }
 embassy-futures = { version = "0.1.2" }
 embassy-sync = { version = "0.7.2" }
@@ -28,7 +37,7 @@ portable-atomic = { version = "1.0.2", features = [
 ] }
 
 static_cell = { version = "2" }
-defmt = "0.3.4"
+defmt = "0.3"
 defmt-rtt = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 

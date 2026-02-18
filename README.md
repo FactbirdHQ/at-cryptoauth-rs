@@ -2,7 +2,7 @@
 
 A `no_std` Rust driver for the Microchip ATECC608A secure element over I2C.
 
-Provides both async and blocking APIs for hardware-backed ECDSA (P-256) signing/verification, SHA-256 hashing, AES-128 encryption, ECDH key exchange, hardware RNG, and X.509 certificate management. Built on `embedded-hal` 1.0 and embassy.
+Provides both async and blocking APIs for hardware-backed ECDSA (P-256) signing/verification, SHA-256 hashing, AES-128 encryption, ECDH key exchange, hardware RNG, and X.509 certificate management including ATECC compressed certificate format. Built on `embedded-hal` 1.0 and embassy.
 
 ## Usage
 
@@ -10,8 +10,16 @@ Provides both async and blocking APIs for hardware-backed ECDSA (P-256) signing/
 use at_cryptoauth::AtCaClient;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-// Create a client from any embedded-hal I2C implementation
+// Create a client with default I2C settings (address 0x60)
 let atca = AtCaClient::<NoopRawMutex, _>::new(i2c);
+
+// Or with custom I2C configuration
+use at_cryptoauth::I2cConfig;
+let atca = AtCaClient::<NoopRawMutex, _>::with_config(i2c, I2cConfig {
+    address: 0x60,
+    wake_delay_us: 1500,
+    max_retries: 20,
+});
 
 // Device info and serial number
 let revision = atca.info().await?;
@@ -26,7 +34,7 @@ let signature = signer.sign(b"message").await?;
 
 // Hardware RNG
 let mut buf = [0u8; 32];
-atca.random().try_fill_bytes(&mut buf)?;
+atca.random().try_fill_bytes(&mut buf).await?;
 ```
 
 All async methods have `_blocking` counterparts (e.g. `info_blocking()`, `digest_blocking()`).
@@ -71,11 +79,13 @@ Sub-APIs are accessed through borrowing methods on the client:
 - `atca.random()` — hardware RNG (implements `rand_core::CryptoRng`)
 - `atca.tng()` — TNG-TLS provisioning
 
+The `cert` module provides X.509 certificate types including the ATECC 72-byte compressed certificate format (`cert::compressed`), DER/PEM encoding, and certificate building.
+
 ## Limitations
 
 - Only the ATECC608A is supported. Other devices in the CryptoAuth family (ATECC508A, ATECC108A) are not tested.
 - I2C is the only supported transport (no SWI/single-wire).
-- The blocking API is not thread-safe — it uses `try_lock().unwrap()` internally.
+- The blocking API is not thread-safe — it returns `ErrorKind::MutexLocked` if the client is already in use.
 - The `embedded-tls` provider does not perform certificate verification; the caller is responsible for trust anchor validation.
 
 ## References

@@ -1,8 +1,6 @@
 //! X.501 time types as defined in RFC 5280
 
-use core::convert::{TryFrom, TryInto};
 use core::fmt;
-
 use core::time::Duration;
 use der::asn1::{GeneralizedTime, UtcTime};
 use der::{Choice, DateTime, Sequence, ValueOrd};
@@ -20,7 +18,6 @@ use der::{Choice, DateTime, Sequence, ValueOrd};
 ///
 /// [RFC 5280 Section 4.1.2.5]: https://tools.ietf.org/html/rfc5280#section-4.1.2.5
 /// [RFC 5280 Appendix A]: https://tools.ietf.org/html/rfc5280#page-117
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Choice, Copy, Clone, Debug, Eq, PartialEq, ValueOrd)]
 pub enum Time {
     /// Legacy UTC time (has 2-digit year, valid from 1970 to 2049).
@@ -98,7 +95,6 @@ impl From<GeneralizedTime> for Time {
 /// }
 /// ```
 /// [RFC 5280 Section 4.1.2.5]: https://datatracker.ietf.org/doc/html/rfc5280#section-4.1.2.5
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Sequence, ValueOrd)]
 pub struct Validity {
     /// notBefore value
@@ -106,18 +102,4 @@ pub struct Validity {
 
     /// notAfter value
     pub not_after: Time,
-}
-
-impl Validity {
-    // /// Creates a `Validity` which starts now and lasts for `duration`.
-    // #[cfg(feature = "std")]
-    // pub fn from_now(duration: Duration) -> der::Result<Self> {
-    //     let now = SystemTime::now();
-    //     let then = now + duration;
-
-    //     Ok(Self {
-    //         not_before: Time::try_from(now)?,
-    //         not_after: Time::try_from(then)?,
-    //     })
-    // }
 }

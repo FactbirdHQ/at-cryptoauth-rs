@@ -3,13 +3,12 @@
 use crate::PublicKey;
 
 use super::{attr::Attributes, name::Name, pem::PemWriter};
-use core::convert::{TryFrom, TryInto};
 
 use der::{
     Decode, DecodeValue, Encode as _, EncodeValue, Enumerated, FixedTag, Header, Length, Reader,
     Sequence, Writer,
 };
-use p256::{ecdsa::DerSignature, EncodedPoint};
+use p256::{EncodedPoint, ecdsa::DerSignature};
 use pem_rfc7468::PemLabel;
 use spki::{AlgorithmIdentifierRef, ObjectIdentifier};
 
@@ -115,13 +114,31 @@ impl FixedTag for SignatureBitString {
 }
 
 impl<'a> DecodeValue<'a> for SignatureBitString {
-    fn decode_value<R: Reader<'a>>(_reader: &mut R, _header: Header) -> der::Result<Self> {
-        // let inner_len = (header.length - Length::ONE)?;
-        // let unused_bits = reader.read_byte()?;
-        // let inner = reader.read_vec(inner_len)?;
-        // Self::new(unused_bits, inner)
+    fn decode_value<R: Reader<'a>>(reader: &mut R, header: Header) -> der::Result<Self> {
+        let inner_len = (header.length - Length::ONE)?;
+        let unused_bits = reader.read_byte()?;
 
-        todo!()
+        // BIT STRING must have 0 unused bits for a valid DER signature
+        if unused_bits != 0 {
+            return Err(der::Tag::BitString.value_error());
+        }
+
+        // Read the DER-encoded signature bytes
+        let mut sig_bytes = [0u8; 128]; // Max DER signature size for P-256
+        let len = usize::try_from(inner_len)?;
+        if len > sig_bytes.len() {
+            return Err(der::ErrorKind::Length {
+                tag: der::Tag::BitString,
+            }
+            .into());
+        }
+        reader.read_into(&mut sig_bytes[..len])?;
+
+        // Parse as DER signature
+        let signature = DerSignature::from_der(&sig_bytes[..len])
+            .map_err(|_| der::Tag::BitString.value_error())?;
+
+        Ok(Self(signature))
     }
 }
 
@@ -154,13 +171,39 @@ impl FixedTag for PublicKeyBitString {
 }
 
 impl<'a> DecodeValue<'a> for PublicKeyBitString {
-    fn decode_value<R: Reader<'a>>(_reader: &mut R, _header: Header) -> der::Result<Self> {
-        // let inner_len = (header.length - Length::ONE)?;
-        // let unused_bits = reader.read_byte()?;
-        // let inner = reader.read_vec(inner_len)?;
-        // Self::new(unused_bits, inner)
+    fn decode_value<R: Reader<'a>>(reader: &mut R, header: Header) -> der::Result<Self> {
+        let inner_len = (header.length - Length::ONE)?;
+        let unused_bits = reader.read_byte()?;
 
-        todo!()
+        // BIT STRING must have 0 unused bits for a valid public key
+        if unused_bits != 0 {
+            return Err(der::Tag::BitString.value_error());
+        }
+
+        // Read the SEC1-encoded public key bytes (uncompressed: 0x04 || X || Y)
+        let len = usize::try_from(inner_len)?;
+        let mut point_bytes = [0u8; 65]; // 1 byte tag + 32 bytes X + 32 bytes Y
+        if len > point_bytes.len() {
+            return Err(der::ErrorKind::Length {
+                tag: der::Tag::BitString,
+            }
+            .into());
+        }
+        reader.read_into(&mut point_bytes[..len])?;
+
+        // Parse SEC1 encoded point
+        let point = EncodedPoint::from_bytes(&point_bytes[..len])
+            .map_err(|_| der::Tag::BitString.value_error())?;
+
+        // Extract X and Y coordinates into PublicKey
+        let x = point.x().ok_or_else(|| der::Tag::BitString.value_error())?;
+        let y = point.y().ok_or_else(|| der::Tag::BitString.value_error())?;
+
+        let mut pubkey = PublicKey::default();
+        pubkey.as_mut()[..32].copy_from_slice(x.as_slice());
+        pubkey.as_mut()[32..].copy_from_slice(y.as_slice());
+
+        Ok(Self(pubkey))
     }
 }
 
@@ -191,170 +234,3 @@ impl<'a> TryFrom<&'a [u8]> for CertReq<'a> {
         Self::from_der(bytes)
     }
 }
-
-// /// `ExtensionReq` as defined in [RFC 5272 Section 3.1].
-// ///
-// /// ```text
-// /// ExtensionReq ::= SEQUENCE SIZE (1..MAX) OF Extension
-// /// ```
-// ///
-// /// [RFC 5272 Section 3.1]: https://datatracker.ietf.org/doc/html/rfc5272#section-3.1
-// #[derive(Clone, Debug, PartialEq, Eq, Default)]
-// pub struct ExtensionReq<'a>(pub SequenceOf<Extension<'a>, MAX_EXTENSIONS>);
-
-// impl AssociatedOid for ExtensionReq {
-//     const OID: ObjectIdentifier = ID_EXTENSION_REQ;
-// }
-
-// impl_newtype!(ExtensionReq, SequenceOf<Extension, MAX_EXTENSIONS>);
-
-// impl<'a> TryFrom<ExtensionReq> for Attribute<'a> {
-//     type Error = der::Error;
-
-//     fn try_from(extension_req: ExtensionReq) -> der::Result<Attribute<'a>> {
-//         let mut values: SetOf<AttributeValue> = Default::default();
-//         values.insert(AnyRef::encode_from(&extension_req.0)?)?;
-
-//         Ok(Attribute {
-//             oid: ExtensionReq::OID,
-//             values,
-//         })
-//     }
-// }
-
-// pub mod attributes {
-//     //! Set of attributes that may be associated to a request
-
-//     use const_oid::AssociatedOid;
-//     use der::{
-//         asn1::{AnyRef, ObjectIdentifier, SetOf},
-//         EncodeValue, Length, Result, Tag, Tagged, Writer,
-//     };
-
-//     use crate::cert::attr::Attribute;
-
-//     /// Trait to be implement by request attributes
-//     pub trait AsAttribute: AssociatedOid + Tagged + EncodeValue + Sized {
-//         /// Returns the Attribute with the content encoded.
-//         fn to_attribute(&self) -> Result<Attribute> {
-//             let inner = AnyRef::encode_from(self)?;
-
-//             let values = SetOf::try_from(&[inner])?;
-
-//             Ok(Attribute {
-//                 oid: Self::OID,
-//                 values,
-//             })
-//         }
-//     }
-
-//     // /// `ChallengePassword` as defined in [RFC 2985 Section 5.4.1]
-//     // ///
-//     // /// ```text
-//     // /// challengePassword ATTRIBUTE ::= {
-//     // ///          WITH SYNTAX DirectoryString {pkcs-9-ub-challengePassword}
-//     // ///          EQUALITY MATCHING RULE caseExactMatch
-//     // ///          SINGLE VALUE TRUE
-//     // ///          ID pkcs-9-at-challengePassword
-//     // ///  }
-//     // /// ```
-//     // ///
-//     // /// [RFC 2985 Section 5.4.1]: https://www.rfc-editor.org/rfc/rfc2985#page-16
-//     // pub struct ChallengePassword(pub DirectoryString);
-
-//     // impl AsAttribute for ChallengePassword {}
-
-//     // impl AssociatedOid for ChallengePassword {
-//     //     const OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.7");
-//     // }
-
-//     // impl Tagged for ChallengePassword {
-//     //     fn tag(&self) -> Tag {
-//     //         self.0.tag()
-//     //     }
-//     // }
-
-//     // impl EncodeValue for ChallengePassword {
-//     //     fn value_len(&self) -> Result<Length> {
-//     //         self.0.value_len()
-//     //     }
-
-//     //     fn encode_value(&self, encoder: &mut impl Writer) -> Result<()> {
-//     //         self.0.encode_value(encoder)
-//     //     }
-//     // }
-// }
-
-// #[cfg(test)]
-// mod tests {
-//     use der::{
-//         asn1::{SequenceOf, SetOf},
-//         AnyRef,
-//     };
-//     use p256::{ecdsa::DerSignature, pkcs8::DecodePrivateKey};
-//     use signature::KeypairRef;
-
-//     use crate::{cert::{
-//         attr::AttributeTypeAndValue,
-//         name::{Name, RdnSequence, RelativeDistinguishedName},
-//     }, PublicKey};
-
-//     const PKCS8_PRIVATE_KEY_DER: &[u8] =
-//         include_bytes!("../../../formats/x509-cert/tests/examples/p256-priv.der");
-
-//     pub struct TestSigner(p256::ecdsa::SigningKey);
-
-//     impl signature::Signer<DerSignature> for TestSigner {
-//         fn try_sign(&self, msg: &[u8]) -> Result<DerSignature, signature::Error> {
-//             self.0.try_sign(msg)
-//         }
-//     }
-
-//     impl signature::Keypair for TestSigner {
-//         type VerifyingKey = PublicKey;
-
-//         fn verifying_key(&self) -> Self::VerifyingKey {
-//             self.0.verifying_key()
-//             PublicKey::try_from(&hex_literal::hex!("b2be345ad7899383a9aab4fb968b1c7835cb2cd42c7e97c26f85df8e201f3be8a82983f0a11d6ff31d66ce9932466f0f2cca21ef96bec9ce235b3d87b0f8fa9e")[..]).unwrap()
-//         }
-//     }
-
-//     fn ecdsa_signer() -> TestSigner {
-//         let secret_key = p256::SecretKey::from_pkcs8_der(PKCS8_PRIVATE_KEY_DER).unwrap();
-//         TestSigner(p256::ecdsa::SigningKey::from(secret_key))
-//     }
-
-//     #[test]
-//     fn certificate_request() {
-//         // let subject = Name::from_str("CN=service.domination.world").unwrap();
-
-//         let mut cn = SetOf::new();
-//         cn.insert(AttributeTypeAndValue {
-//             oid: const_oid::db::rfc4519::CN,
-//             value: AnyRef::new(der::Tag::Utf8String, b"factbird").unwrap(),
-//         })
-//         .unwrap();
-
-//         let mut rdn_seq = SequenceOf::new();
-//         rdn_seq.add(RelativeDistinguishedName(cn)).unwrap();
-//         let subject = RdnSequence(rdn_seq);
-
-//         let signer = ecdsa_signer();
-//         let builder =
-//             crate::cert::builder::RequestBuilder::new(subject).expect("Create certificate request");
-
-//         let mut buf = [0u8; 1024];
-//         let cert_req =
-//             crate::cert::builder::Builder::build::<_>(builder, &mut buf, &signer).unwrap();
-
-//         println!("{:#?}", cert_req);
-
-//         let mut pem_buf = [0u8; 1024];
-
-//         let pem_len = cert_req
-//             .to_pem_slice(&mut pem_buf, pem_rfc7468::LineEnding::LF)
-//             .expect("generate pem");
-
-//         println!("{}", core::str::from_utf8(&pem_buf[..pem_len]).unwrap());
-//     }
-// }
