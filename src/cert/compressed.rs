@@ -11,14 +11,14 @@
 //! - Chain ID (1 byte)
 //! - Serial number source (1 byte)
 
-use der::{asn1::GeneralizedTime, DateTime};
+use der::{DateTime, asn1::GeneralizedTime};
 use p256::ecdsa::DerSignature;
 
 use crate::{
+    PublicKey,
     command::Serial,
     error::{Error, ErrorKind},
     memory::Slot,
-    PublicKey,
 };
 
 use super::time::{Time, Validity};
@@ -36,15 +36,15 @@ pub struct CompressedDate(u32);
 
 impl CompressedDate {
     // Bit field masks and offsets
-    const YEAR_MASK: u32 = 0x1F;        // 5 bits
+    const YEAR_MASK: u32 = 0x1F; // 5 bits
     const YEAR_OFFSET: u32 = 0;
-    const MONTH_MASK: u32 = 0x0F;       // 4 bits
+    const MONTH_MASK: u32 = 0x0F; // 4 bits
     const MONTH_OFFSET: u32 = 5;
-    const DAY_MASK: u32 = 0x1F;         // 5 bits
+    const DAY_MASK: u32 = 0x1F; // 5 bits
     const DAY_OFFSET: u32 = 9;
-    const HOUR_MASK: u32 = 0x1F;        // 5 bits
+    const HOUR_MASK: u32 = 0x1F; // 5 bits
     const HOUR_OFFSET: u32 = 14;
-    const EXPIRE_MASK: u32 = 0x1F;      // 5 bits
+    const EXPIRE_MASK: u32 = 0x1F; // 5 bits
     const EXPIRE_OFFSET: u32 = 19;
 
     /// Create a new CompressedDate with all fields set to 0
@@ -196,9 +196,7 @@ impl CompressedDate {
 
         // Convert to Time (use GeneralizedTime for years >= 2050, UTCTime otherwise)
         let not_before = if issue_year >= 2050 {
-            Time::GeneralTime(
-                GeneralizedTime::from_date_time(issue_datetime)
-            )
+            Time::GeneralTime(GeneralizedTime::from_date_time(issue_datetime))
         } else {
             Time::UtcTime(
                 der::asn1::UtcTime::from_date_time(issue_datetime)
@@ -207,9 +205,7 @@ impl CompressedDate {
         };
 
         let not_after = if expire_year >= 2050 {
-            Time::GeneralTime(
-                GeneralizedTime::from_date_time(expire_datetime)
-            )
+            Time::GeneralTime(GeneralizedTime::from_date_time(expire_datetime))
         } else {
             Time::UtcTime(
                 der::asn1::UtcTime::from_date_time(expire_datetime)
@@ -363,8 +359,8 @@ impl CompressedCertificate {
         sig_bytes[32..].copy_from_slice(self.signature_s());
 
         // Convert to p256 Signature first, then to DER
-        let signature = p256::ecdsa::Signature::from_slice(&sig_bytes)
-            .map_err(|_| ErrorKind::BadParam)?;
+        let signature =
+            p256::ecdsa::Signature::from_slice(&sig_bytes).map_err(|_| ErrorKind::BadParam)?;
 
         Ok(signature.to_der())
     }
@@ -372,8 +368,8 @@ impl CompressedCertificate {
     /// Set the signature from a DER-encoded signature
     pub fn set_signature_from_der(&mut self, sig: &DerSignature) -> Result<(), Error> {
         // Convert DER to fixed-size format
-        let signature = p256::ecdsa::Signature::from_der(sig.as_bytes())
-            .map_err(|_| ErrorKind::BadParam)?;
+        let signature =
+            p256::ecdsa::Signature::from_der(sig.as_bytes()).map_err(|_| ErrorKind::BadParam)?;
 
         let bytes = signature.to_bytes();
         self.data[Self::SIG_R_OFFSET..Self::SIG_S_OFFSET].copy_from_slice(&bytes[..32]);

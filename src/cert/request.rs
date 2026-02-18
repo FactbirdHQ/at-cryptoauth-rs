@@ -8,7 +8,7 @@ use der::{
     Decode, DecodeValue, Encode as _, EncodeValue, Enumerated, FixedTag, Header, Length, Reader,
     Sequence, Writer,
 };
-use p256::{ecdsa::DerSignature, EncodedPoint};
+use p256::{EncodedPoint, ecdsa::DerSignature};
 use pem_rfc7468::PemLabel;
 use spki::{AlgorithmIdentifierRef, ObjectIdentifier};
 
@@ -127,13 +127,16 @@ impl<'a> DecodeValue<'a> for SignatureBitString {
         let mut sig_bytes = [0u8; 128]; // Max DER signature size for P-256
         let len = usize::try_from(inner_len)?;
         if len > sig_bytes.len() {
-            return Err(der::ErrorKind::Length { tag: der::Tag::BitString }.into());
+            return Err(der::ErrorKind::Length {
+                tag: der::Tag::BitString,
+            }
+            .into());
         }
         reader.read_into(&mut sig_bytes[..len])?;
 
         // Parse as DER signature
-        let signature =
-            DerSignature::from_der(&sig_bytes[..len]).map_err(|_| der::Tag::BitString.value_error())?;
+        let signature = DerSignature::from_der(&sig_bytes[..len])
+            .map_err(|_| der::Tag::BitString.value_error())?;
 
         Ok(Self(signature))
     }
@@ -181,7 +184,10 @@ impl<'a> DecodeValue<'a> for PublicKeyBitString {
         let len = usize::try_from(inner_len)?;
         let mut point_bytes = [0u8; 65]; // 1 byte tag + 32 bytes X + 32 bytes Y
         if len > point_bytes.len() {
-            return Err(der::ErrorKind::Length { tag: der::Tag::BitString }.into());
+            return Err(der::ErrorKind::Length {
+                tag: der::Tag::BitString,
+            }
+            .into());
         }
         reader.read_into(&mut point_bytes[..len])?;
 

@@ -190,7 +190,8 @@ where
     /// Write private key to device
     pub async fn write_private_key(&self, key_id: Slot, private_key: &Block) -> Result<(), Error> {
         let mut inner = self.inner.lock().await;
-        let packet = PrivWrite::new(inner.packet_builder()).write_private_key(key_id, private_key)?;
+        let packet =
+            PrivWrite::new(inner.packet_builder()).write_private_key(key_id, private_key)?;
         inner.execute(packet).await.map(drop)
     }
 
@@ -250,7 +251,8 @@ where
         private_key: &Block,
     ) -> Result<(), Error> {
         let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
-        let packet = PrivWrite::new(inner.packet_builder()).write_private_key(key_id, private_key)?;
+        let packet =
+            PrivWrite::new(inner.packet_builder()).write_private_key(key_id, private_key)?;
         inner.execute_blocking(packet).map(drop)
     }
 

@@ -1,9 +1,9 @@
 //! Memory and configuration operations
 
+use crate::Block;
 use crate::command::{self, Lock, PublicKey, Serial, Word};
 use crate::error::{Error, ErrorKind};
 use crate::memory::{CertificateRepr, CompressedCertRepr, Size, Slot, Zone};
-use crate::Block;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use super::AtCaClient;
@@ -252,7 +252,9 @@ where
             }
         }
 
-        Ok(crate::cert::compressed::CompressedCertificate::new(cert_data))
+        Ok(crate::cert::compressed::CompressedCertificate::new(
+            cert_data,
+        ))
     }
 
     pub async fn write_compressed_cert(
@@ -292,9 +294,9 @@ where
         let public_key = self.pubkey(def.public_key_slot).await?;
         let device_serial = self.serial_number().await?;
         let mut serial_buf = [0u8; 16];
-        let serial = def
-            .serial_source
-            .generate(&device_serial, compressed.signer_id(), &mut serial_buf)?;
+        let serial =
+            def.serial_source
+                .generate(&device_serial, compressed.signer_id(), &mut serial_buf)?;
         def.reconstruct(&compressed, &public_key, serial, output)
     }
 }
@@ -305,7 +307,11 @@ where
     M: RawMutex,
 {
     pub fn serial_number_blocking(&mut self) -> Result<Serial, Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet =
             command::Read::new(inner.packet_builder()).read(Zone::Config, Size::Block, 0, 0)?;
         inner.execute_blocking(packet)?.as_ref().try_into()
@@ -314,7 +320,11 @@ where
     pub fn pubkey_blocking(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
         let mut pubkey = PublicKey::default();
         let mut offset = 0;
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         for (i, ranges) in CertificateRepr::new().enumerate() {
             let packet = command::Read::new(inner.packet_builder()).slot(key_id, i as u8)?;
@@ -337,7 +347,11 @@ where
     ) -> Result<(), Error> {
         let mut data = Block::default();
         let mut offset = 0;
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         for (i, ranges) in CertificateRepr::new().enumerate() {
             data.as_mut().iter_mut().for_each(|value| *value = 0);
@@ -360,7 +374,11 @@ where
         key_id: Slot,
         aes_key: impl AsRef<[u8]>,
     ) -> Result<(), Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let mut data = Block::default();
         data.as_mut()[..0x10].copy_from_slice(aes_key.as_ref());
         let packet = command::Write::new(inner.packet_builder()).slot(key_id, 0 as u8, &data)?;
@@ -368,7 +386,11 @@ where
     }
 
     pub fn is_slot_locked_blocking(&mut self, slot: Slot) -> Result<bool, Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let zone = Zone::Config;
         let size = Size::Word;
         let block = 2;
@@ -385,7 +407,11 @@ where
     }
 
     pub fn is_locked_blocking(&mut self, zone: Zone) -> Result<bool, Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let size = Size::Word;
         let block = 2;
         let word_offset = 5;
@@ -405,19 +431,31 @@ where
     }
 
     pub fn lock_slot_blocking(&mut self, key_id: Slot) -> Result<(), Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet = Lock::new(inner.packet_builder()).slot(key_id)?;
         inner.execute_blocking(packet).map(drop)
     }
 
     pub fn lock_blocking(&mut self, zone: Zone) -> Result<(), Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet = Lock::new(inner.packet_builder()).zone(zone, None)?;
         inner.execute_blocking(packet).map(drop)
     }
 
     pub fn lock_crc_blocking(&mut self, zone: Zone, crc: u16) -> Result<(), Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet = Lock::new(inner.packet_builder()).zone(zone, Some(crc))?;
         inner.execute_blocking(packet).map(drop)
     }
@@ -425,7 +463,11 @@ where
     pub fn chip_options_blocking(&mut self) -> Result<u16, Error> {
         let (block, offset, pos) = Zone::locate_index(Self::CHIP_OPTIONS_INDEX);
         let range = pos as usize..pos as usize + 2;
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet = command::Read::new(inner.packet_builder()).read(
             Zone::Config,
             Size::Word,
@@ -444,7 +486,11 @@ where
         let index = Self::SLOT_CONFIG_INDEX + (slot as usize * 2);
         let (block, offset, pos) = Zone::locate_index(index);
         let range = pos as usize..pos as usize + 2;
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet = command::Read::new(inner.packet_builder()).read(
             Zone::Config,
             Size::Word,
@@ -463,7 +509,11 @@ where
         let index = Self::KEY_CONFIG_INDEX + (slot as usize * 2);
         let (block, offset, pos) = Zone::locate_index(index);
         let range = pos as usize..pos as usize + 2;
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet = command::Read::new(inner.packet_builder()).read(
             Zone::Config,
             Size::Word,
@@ -485,7 +535,11 @@ where
         offset: u8,
         data: impl AsRef<[u8]>,
     ) -> Result<(), Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet = command::Write::new(inner.packet_builder()).write(
             Zone::Config,
             size,
@@ -506,7 +560,11 @@ where
 
         let mut cert_data = [0u8; crate::cert::compressed::CompressedCertificate::SIZE];
         let mut offset = 0;
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         for (i, ranges) in CompressedCertRepr::new().enumerate() {
             let packet = command::Read::new(inner.packet_builder()).slot(slot, i as u8)?;
@@ -519,7 +577,9 @@ where
             }
         }
 
-        Ok(crate::cert::compressed::CompressedCertificate::new(cert_data))
+        Ok(crate::cert::compressed::CompressedCertificate::new(
+            cert_data,
+        ))
     }
 
     pub fn write_compressed_cert_blocking(
@@ -533,7 +593,11 @@ where
 
         let mut data = Block::default();
         let mut offset = 0;
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         for (i, ranges) in CompressedCertRepr::new().enumerate() {
             data.as_mut().iter_mut().for_each(|value| *value = 0);
@@ -559,9 +623,9 @@ where
         let public_key = self.pubkey_blocking(def.public_key_slot)?;
         let device_serial = self.serial_number_blocking()?;
         let mut serial_buf = [0u8; 16];
-        let serial = def
-            .serial_source
-            .generate(&device_serial, compressed.signer_id(), &mut serial_buf)?;
+        let serial =
+            def.serial_source
+                .generate(&device_serial, compressed.signer_id(), &mut serial_buf)?;
         def.reconstruct(&compressed, &public_key, serial, output)
     }
 }

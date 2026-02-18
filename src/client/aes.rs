@@ -86,7 +86,11 @@ where
     ) -> Result<(), Error> {
         use command::Aes as AesCmd;
 
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         if plaintext.len() != ciphertext.len() {
             return Err(ErrorKind::BadParam.into());
@@ -118,7 +122,11 @@ where
     ) -> Result<(), Error> {
         use command::Aes as AesCmd;
 
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         if ciphertext.len() != plaintext.len() {
             return Err(ErrorKind::BadParam.into());

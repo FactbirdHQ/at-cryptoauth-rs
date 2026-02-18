@@ -3,9 +3,9 @@
 use core::fmt::Display;
 
 use der::{
-    asn1::{self, IntRef},
     DecodeValue, EncodeValue, ErrorKind, FixedTag, Header, Length, Reader, Result, Tag, ValueOrd,
     Writer,
+    asn1::{self, IntRef},
 };
 
 /// [RFC 5280 Section 4.1.2.2.]  Serial Number

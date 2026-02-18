@@ -6,8 +6,8 @@ use crate::memory::Slot;
 use crate::{Digest, Signature};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use p256::ecdsa::DerSignature;
-use signature::hazmat::PrehashSigner;
 use signature::Keypair;
+use signature::hazmat::PrehashSigner;
 
 use super::{AtCaClient, VerifyingKey};
 
@@ -63,7 +63,11 @@ where
         // 2. Nonce load
         self.atca.write_message_digest_buffer_blocking(digest)?;
         // 3. Sign
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
         let packet = command::Sign::new(inner.packet_builder()).external(self.key_id)?;
         let response = inner.execute_blocking(packet)?;
         Signature::from_bytes(response.as_ref().into()).map_err(|_| ErrorKind::BadParam.into())

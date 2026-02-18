@@ -5,7 +5,7 @@ use const_oid::db::rfc5912::{ECDSA_WITH_SHA_256, ID_EC_PUBLIC_KEY, SECP_256_R_1}
 use core::fmt;
 use der::Encode;
 use p256::ecdsa::DerSignature;
-use signature::{rand_core::CryptoRngCore, Keypair, RandomizedSigner, Signer};
+use signature::{Keypair, RandomizedSigner, Signer, rand_core::CryptoRngCore};
 use spki::{AlgorithmIdentifier, AlgorithmIdentifierWithOid, ObjectIdentifier};
 
 use crate::PublicKey;

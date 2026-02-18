@@ -1,8 +1,8 @@
 //! SHA-256 hashing operations
 
+use crate::Digest;
 use crate::command;
 use crate::error::{Error, ErrorKind};
-use crate::Digest;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::Vec;
 
@@ -117,7 +117,11 @@ where
     M: RawMutex,
 {
     pub fn init_blocking(&mut self) -> Result<(), Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         let packet = command::Sha::new(inner.packet_builder()).start()?;
         inner.execute_blocking(packet)?;
@@ -134,7 +138,11 @@ where
         let (bytes, remainder) = data.as_ref().split_at(length - remainder_length);
         self.remaining_bytes.extend_from_slice(remainder).ok();
 
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         // Execute update command
         for chunk in bytes.chunks(capacity) {
@@ -155,7 +163,11 @@ where
     }
 
     pub fn finalize_blocking(self) -> Result<Digest, Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         let packet = command::Sha::new(inner.packet_builder()).end(&self.remaining_bytes)?;
         inner.execute_blocking(packet)?.as_ref().try_into()

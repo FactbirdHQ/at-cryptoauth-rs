@@ -59,7 +59,11 @@ where
         signature: &Signature,
         public_key: &PublicKey,
     ) -> Result<(), Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         // 1. Nonce load
         self.atca.write_message_digest_buffer_blocking(digest)?;

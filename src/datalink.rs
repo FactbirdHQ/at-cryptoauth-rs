@@ -109,7 +109,10 @@ where
 
         let mut count = 0;
         loop {
-            let result = self.phy.write(self.config.address, from_ref(&word_address)).await;
+            let result = self
+                .phy
+                .write(self.config.address, from_ref(&word_address))
+                .await;
 
             if result.is_ok() {
                 break;
@@ -148,10 +151,16 @@ where
         // Send a single null byte to an absent address.
         //
         // Ignore errors as this will error if the device is not awake yet.
-        self.phy.write(self.config.address, from_ref(&0x00)).await.ok();
+        self.phy
+            .write(self.config.address, from_ref(&0x00))
+            .await
+            .ok();
 
         // Wait for the device to wake up.
-        embassy_time::Timer::after(embassy_time::Duration::from_micros(self.config.wake_delay_us as u64)).await;
+        embassy_time::Timer::after(embassy_time::Duration::from_micros(
+            self.config.wake_delay_us as u64,
+        ))
+        .await;
 
         let buffer = &mut [0x00, 0x00, 0x00, 0x00];
 

@@ -42,7 +42,11 @@ where
     M: RawMutex,
 {
     pub fn try_fill_bytes_blocking(&mut self, dest: &mut [u8]) -> Result<(), Error> {
-        let mut inner = self.atca.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
 
         for c in dest.chunks_mut(32) {
             let packet = command::Random::new(inner.packet_builder()).random()?;

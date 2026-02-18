@@ -1,8 +1,8 @@
 //! Standardized X.509 Certificate Extensions
 
 use der::{
-    asn1::{OctetStringRef, SequenceOf},
     Sequence, ValueOrd,
+    asn1::{OctetStringRef, SequenceOf},
 };
 use spki::ObjectIdentifier;
 
