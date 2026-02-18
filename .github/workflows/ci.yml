@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Build (library)
+        run: cargo build --all --target thumbv7em-none-eabihf
+
+      - name: Build (examples)
+        run: |
+          for EXAMPLE in $(ls examples);
+          do
+            (cd examples/$EXAMPLE && cargo build)
+          done
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Test
+        run: cargo test
+
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Run rustfmt (library)
+        run: cargo fmt --all -- --check --verbose
+
+      - name: Run rustfmt (examples)
+        run: |
+          for EXAMPLE in $(ls examples);
+          do
+            (cd examples/$EXAMPLE && cargo fmt --all -- --check --verbose)
+          done
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    env:
+      CLIPPY_PARAMS: -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Run clippy (library)
+        run: cargo clippy --features "log" -- ${{ env.CLIPPY_PARAMS }}
+
+      - name: Run clippy (examples)
+        run: |
+          for EXAMPLE in $(ls examples);
+          do
+            (cd examples/$EXAMPLE && cargo clippy -- ${{ env.CLIPPY_PARAMS }})
+          done
