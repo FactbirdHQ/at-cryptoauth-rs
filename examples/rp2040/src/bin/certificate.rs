@@ -13,9 +13,11 @@
 #![no_main]
 
 use at_cryptoauth::{
-    cert::compressed::{CertElement, CertificateDefinition, CompressedCertificate, CompressedDate, SerialSource},
-    memory::Slot,
     AtCaClient,
+    cert::compressed::{
+        CertElement, CertificateDefinition, CompressedCertificate, CompressedDate, SerialSource,
+    },
+    memory::Slot,
 };
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
@@ -50,11 +52,11 @@ async fn main(_spawner: Spawner) {
     // Issue: 2024-06-15 10:00
     // Validity: 5 years
     let date = CompressedDate::new()
-        .with_year(24)          // Year offset from 2000 (2024 = 24)
-        .with_month(6)          // June
-        .with_day(15)           // 15th
-        .with_hour(10)          // 10:00
-        .with_expire_years(5);  // Valid for 5 years
+        .with_year(24) // Year offset from 2000 (2024 = 24)
+        .with_month(6) // June
+        .with_day(15) // 15th
+        .with_hour(10) // 10:00
+        .with_expire_years(5); // Valid for 5 years
 
     defmt::info!(
         "Compressed date: year={}, month={}, day={}, hour={}, expire_years={}",
@@ -119,7 +121,11 @@ async fn main(_spawner: Spawner) {
 
     // Try to read a compressed certificate from slot 9
     defmt::info!("Reading compressed certificate from slot 9...");
-    match client.memory().read_compressed_cert(Slot::Certificate09).await {
+    match client
+        .memory()
+        .read_compressed_cert(Slot::Certificate09)
+        .await
+    {
         Ok(stored_cert) => {
             defmt::info!("Read certificate successfully!");
             defmt::info!("  Signer ID: {:#06x}", stored_cert.signer_id());
@@ -157,7 +163,8 @@ async fn main(_spawner: Spawner) {
     // This is a minimal example template (NOT a valid certificate)
     static EXAMPLE_TEMPLATE: &[u8] = &[
         // SEQUENCE header (certificate wrapper)
-        0x30, 0x82, 0x01, 0x00,
+        0x30, 0x82, 0x01,
+        0x00,
         // ... in a real template, this would contain the full DER structure
         // with placeholder bytes for dynamic elements
     ];
@@ -165,15 +172,15 @@ async fn main(_spawner: Spawner) {
     let _cert_def = CertificateDefinition {
         template: EXAMPLE_TEMPLATE,
         // Offsets where to insert dynamic data (these are examples only)
-        signature: CertElement::new(100, 72),      // DER signature location
-        public_key_x: CertElement::new(50, 32),    // X coordinate of public key
-        public_key_y: CertElement::new(82, 32),    // Y coordinate of public key
-        issue_date: CertElement::new(120, 13),     // UTCTime is 13 bytes
+        signature: CertElement::new(100, 72), // DER signature location
+        public_key_x: CertElement::new(50, 32), // X coordinate of public key
+        public_key_y: CertElement::new(82, 32), // Y coordinate of public key
+        issue_date: CertElement::new(120, 13), // UTCTime is 13 bytes
         expire_date: CertElement::new(135, 13),
-        serial_number: CertElement::new(10, 10),   // Serial number location
+        serial_number: CertElement::new(10, 10), // Serial number location
         serial_source: SerialSource::DeviceSerial, // How to generate serial
-        compressed_slot: Slot::Certificate09,      // Where compressed cert is stored
-        public_key_slot: Slot::Certificate0a,      // Where public key is stored
+        compressed_slot: Slot::Certificate09,    // Where compressed cert is stored
+        public_key_slot: Slot::Certificate0a,    // Where public key is stored
     };
 
     defmt::info!("Certificate definition created (example only)");
