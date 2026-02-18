@@ -131,12 +131,8 @@ mod tests {
 
     use super::Certificate;
 
-    const X509_CERT_PEM: &[u8] = include_bytes!(
-        "/home/mathias/Downloads/0c4633573cf31127fc330fe6c57ad1e55e034c41aedbeafa8bf77bb0fdf1de80-certificate.pem.crt"
-    );
-    const X509_CERT_DER: &[u8] = include_bytes!(
-        "/home/mathias/Downloads/0c4633573cf31127fc330fe6c57ad1e55e034c41aedbeafa8bf77bb0fdf1de80-certificate.der.crt"
-    );
+    const X509_CERT_PEM: &[u8] = include_bytes!("testdata/device.pem");
+    const X509_CERT_DER: &[u8] = include_bytes!("testdata/device.der");
 
     #[test]
     fn decode_pem_cert() {
