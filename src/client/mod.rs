@@ -35,7 +35,9 @@ pub use signing::SigningKey;
 pub use verifying::VerifyingKey;
 
 use crate::clock_divider::ClockDivider;
-use crate::command::{self, Ecdh, GenKey, Info, NonceCtx, PrivWrite, PublicKey, SharedSecret, Word};
+use crate::command::{
+    self, Ecdh, GenKey, Info, NonceCtx, PrivWrite, PublicKey, SharedSecret, Word,
+};
 use crate::datalink::{I2c, I2cConfig};
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Slot, Zone};

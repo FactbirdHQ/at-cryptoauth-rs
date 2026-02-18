@@ -3,10 +3,10 @@
 //! Provides [`AteccProvider`] implementing [`embedded_tls::CryptoProvider`] with
 //! hardware-backed ECDSA verification and signing through the ATECC608 secure element.
 
+use crate::AtCaClient;
 use crate::cert::compressed::CertificateDefinition;
 use crate::command::PublicKey;
 use crate::memory::Slot;
-use crate::AtCaClient;
 
 use der::asn1::{
     AnyRef, BitStringRef, GeneralizedTime, IntRef, ObjectIdentifier, SequenceOf, SetOf, UtcTime,
@@ -271,8 +271,8 @@ where
                 _ => return Err(TlsError::DecodeError),
             };
 
-            let parsed = DecodedCertificate::from_der(cert_data)
-                .map_err(|_| TlsError::DecodeError)?;
+            let parsed =
+                DecodedCertificate::from_der(cert_data).map_err(|_| TlsError::DecodeError)?;
 
             // Only ECDSA P-256 SHA-256 is supported by the ATECC608
             if parsed.signature_algorithm.oid != ECDSA_SHA256_OID {
@@ -280,19 +280,15 @@ where
             }
 
             // Hash the TBS data with software SHA-256
-            let tbs_data =
-                get_certificate_tlv_bytes(cert_data)?;
+            let tbs_data = get_certificate_tlv_bytes(cert_data)?;
             let hash = sha2::Sha256::digest(tbs_data);
 
             // Convert hash to ATECC Digest
-            let digest = crate::Digest::try_from(hash.as_slice())
-                .map_err(|_| TlsError::CryptoError)?;
+            let digest =
+                crate::Digest::try_from(hash.as_slice()).map_err(|_| TlsError::CryptoError)?;
 
             // Convert DER signature to p256::ecdsa::Signature (raw R||S internally)
-            let sig_bytes = parsed
-                .signature
-                .as_bytes()
-                .ok_or(TlsError::DecodeError)?;
+            let sig_bytes = parsed.signature.as_bytes().ok_or(TlsError::DecodeError)?;
             let signature = p256::ecdsa::Signature::from_der(sig_bytes)
                 .map_err(|_| TlsError::InvalidSignature)?;
 
@@ -357,8 +353,7 @@ where
 
         // Hash the verification message with software SHA-256
         let hash = sha2::Sha256::digest(&msg);
-        let digest =
-            crate::Digest::try_from(hash.as_slice()).map_err(|_| TlsError::CryptoError)?;
+        let digest = crate::Digest::try_from(hash.as_slice()).map_err(|_| TlsError::CryptoError)?;
 
         // Convert DER signature
         let signature = p256::ecdsa::Signature::from_der(verify.signature)
@@ -428,21 +423,13 @@ where
         self.atca.random()
     }
 
-    fn verifier(
-        &mut self,
-    ) -> Result<&mut impl TlsVerifier<Self::CipherSuite>, TlsError> {
+    fn verifier(&mut self) -> Result<&mut impl TlsVerifier<Self::CipherSuite>, TlsError> {
         Ok(&mut self.verifier)
     }
 
     fn signer(
         &mut self,
-    ) -> Result<
-        (
-            impl signature::SignerMut<Self::Signature>,
-            SignatureScheme,
-        ),
-        TlsError,
-    > {
+    ) -> Result<(impl signature::SignerMut<Self::Signature>, SignatureScheme), TlsError> {
         Ok((
             self.atca.signer(self.sign_key),
             SignatureScheme::EcdsaSecp256r1Sha256,
