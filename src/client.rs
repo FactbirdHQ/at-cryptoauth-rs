@@ -16,7 +16,7 @@ use embassy_sync::mutex::Mutex;
 use heapless::Vec;
 use p256::ecdsa::DerSignature;
 use signature::hazmat::PrehashSigner;
-use signature::{rand_core, Keypair};
+use signature::{Keypair, rand_core};
 
 struct Inner<PHY> {
     pub i2c: I2c<PHY>,

@@ -11,7 +11,7 @@ use super::error::Error;
 use super::memory::{Size, Slot, Zone};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use signature::digest::{
-    consts::U32, generic_array::GenericArray, FixedOutput, OutputSizeUser, Reset, Update,
+    FixedOutput, OutputSizeUser, Reset, Update, consts::U32, generic_array::GenericArray,
 };
 
 pub const AUTH_PRIVATE_KEY: Slot = Slot::PrivateKey00;
@@ -202,11 +202,11 @@ where
 mod tests {
     use super::*;
     use crate::command::OpCode;
+    use OpCode::*;
     use core::convert::TryInto;
     use core::ops::Deref;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use heapless::Vec;
-    use OpCode::*;
     const KEY_TYPE_P256: u16 = 0x04; // P256 NIST ECC key
     const KEY_TYPE_AES: u16 = 0x06; // AES-128 Key
     const KEY_TYPE_SHA: u16 = 0x07; // SHA key or other data
