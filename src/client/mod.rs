@@ -34,6 +34,8 @@ pub use sha::Sha;
 pub use signing::SigningKey;
 pub use verifying::VerifyingKey;
 
+use core::future::Future;
+
 use crate::clock_divider::ClockDivider;
 use crate::command::{
     self, Ecdh, GenKey, Info, NonceCtx, PrivWrite, PublicKey, SharedSecret, Word,
@@ -69,9 +71,12 @@ impl<PHY> Inner<PHY>
 where
     PHY: embedded_hal_async::i2c::I2c,
 {
-    pub(crate) async fn execute(&mut self, packet: Packet) -> Result<Response<'_>, Error> {
+    pub(crate) fn execute(
+        &mut self,
+        packet: Packet,
+    ) -> impl Future<Output = Result<Response<'_>, Error>> {
         let exec_time = self.clock_divider.execution_time(packet.opcode());
-        self.i2c.execute(&mut self.buffer, packet, exec_time).await
+        self.i2c.execute(&mut self.buffer, packet, exec_time)
     }
 }
 
@@ -175,6 +180,13 @@ where
         inner.execute(packet).await?.as_ref().try_into()
     }
 
+    /// Issue a Random command to update the ATECC's internal RNG seed, discarding the output.
+    pub(crate) async fn update_seed(&self) -> Result<(), Error> {
+        let mut inner = self.inner.lock().await;
+        let packet = command::Random::new(inner.packet_builder()).random()?;
+        inner.execute(packet).await.map(drop)
+    }
+
     /// Write to device's digest message buffer
     pub async fn write_message_digest_buffer(&self, msg: &Digest) -> Result<(), Error> {
         let mut inner = self.inner.lock().await;
@@ -252,6 +264,13 @@ where
         let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
         let packet = Info::new(inner.packet_builder()).revision()?;
         inner.execute_blocking(packet)?.as_ref().try_into()
+    }
+
+    /// Issue a Random command to update the ATECC's internal RNG seed, discarding the output.
+    pub(crate) fn update_seed_blocking(&self) -> Result<(), Error> {
+        let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let packet = command::Random::new(inner.packet_builder()).random()?;
+        inner.execute_blocking(packet).map(drop)
     }
 
     /// Write to device's digest message buffer

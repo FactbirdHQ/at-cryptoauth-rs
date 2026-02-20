@@ -330,7 +330,7 @@ impl<'a> Ecdh<'a> {
             .opcode(OpCode::Ecdh)
             .mode(0x00)
             .param2(private_key_id as u16)
-            .pdu_data(public_key)
+            .pdu_data(public_key.as_ref())
             .build()?;
         Ok(packet)
     }
@@ -484,7 +484,7 @@ impl<'a> NonceCtx<'a> {
             .builder
             .opcode(OpCode::Nonce)
             .mode(mode)
-            .pdu_data(msg)
+            .pdu_data(msg.as_ref())
             .build()?;
         Ok(packet)
     }
@@ -566,8 +566,8 @@ impl<'a> Sha<'a> {
     }
 
     /// Data length should be exactly 64 bytes.
-    pub(crate) fn update(&mut self, data: impl AsRef<[u8]>) -> Result<Packet, Error> {
-        let length = data.as_ref().len();
+    pub(crate) fn update(&mut self, data: &[u8]) -> Result<Packet, Error> {
+        let length = data.len();
         if length != 64 {
             return Err(ErrorKind::BadParam.into());
         }
@@ -583,8 +583,8 @@ impl<'a> Sha<'a> {
     }
 
     /// Command execution will return a digest of Block size.
-    pub(crate) fn end(&mut self, data: impl AsRef<[u8]>) -> Result<Packet, Error> {
-        let length = data.as_ref().len();
+    pub(crate) fn end(&mut self, data: &[u8]) -> Result<Packet, Error> {
+        let length = data.len();
         if length > 64 {
             return Err(ErrorKind::BadParam.into());
         }
@@ -802,7 +802,7 @@ impl<'a> Write<'a> {
             .opcode(OpCode::Write)
             .mode(mode)
             .param2(addr)
-            .pdu_data(data)
+            .pdu_data(data.as_ref())
             .build()?;
         Ok(packet)
     }
@@ -813,9 +813,9 @@ impl<'a> Write<'a> {
         size: Size,
         block: u8,
         offset: u8,
-        data: impl AsRef<[u8]>,
+        data: &[u8],
     ) -> Result<Packet, Error> {
-        if size.len() != data.as_ref().len() {
+        if size.len() != data.len() {
             return Err(ErrorKind::BadParam.into());
         }
 

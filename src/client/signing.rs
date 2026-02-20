@@ -32,9 +32,8 @@ where
 {
     /// Takes a 32-byte message to be signed, typically the SHA256 hash of the full message.
     pub async fn sign_digest(&self, digest: &Digest) -> Result<Signature, Error> {
-        // 1. Random value generation
-        let mut data = [0u8; 32];
-        self.atca.random().try_fill_bytes(&mut data).await?;
+        // 1. Update RNG seed
+        self.atca.update_seed().await?;
         // 2. Nonce load
         self.atca.write_message_digest_buffer(digest).await?;
         // 3. Sign
@@ -57,9 +56,8 @@ where
 {
     /// Takes a 32-byte message to be signed, typically the SHA256 hash of the full message.
     pub fn sign_digest_blocking(&self, digest: &Digest) -> Result<Signature, Error> {
-        // 1. Random value generation
-        let mut data = [0u8; 32];
-        self.atca.random().try_fill_bytes_blocking(&mut data)?;
+        // 1. Update RNG seed
+        self.atca.update_seed_blocking()?;
         // 2. Nonce load
         self.atca.write_message_digest_buffer_blocking(digest)?;
         // 3. Sign

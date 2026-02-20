@@ -217,7 +217,7 @@ pub struct AteccVerifier<'a, M: RawMutex, PHY> {
     atca: &'a AtCaClient<M, PHY>,
     ca_pubkey_source: RootCaSource,
     host: Option<heapless::String<64>>,
-    certificate_transcript: Option<sha2::Sha256>,
+    certificate_transcript: Option<[u8; 32]>,
     server_public_key: Option<PublicKey>,
 }
 
@@ -321,7 +321,7 @@ where
             return Err(TlsError::InvalidCertificate);
         }
 
-        self.certificate_transcript = Some(transcript.clone());
+        self.certificate_transcript = Some(transcript.clone().finalize().into());
         Ok(())
     }
 
@@ -339,8 +339,7 @@ where
         let handshake_hash = self
             .certificate_transcript
             .take()
-            .ok_or(TlsError::InvalidHandshake)?
-            .finalize();
+            .ok_or(TlsError::InvalidHandshake)?;
 
         let ctx_str = b"TLS 1.3, server CertificateVerify\x00";
         let mut msg: Vec<u8, 146> = Vec::new();

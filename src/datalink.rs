@@ -81,7 +81,7 @@ where
         exec_time: Option<u32>,
     ) -> Result<Response<'a>, Error> {
         self.wake().await?;
-        self.send(&packet.buffer(buffer)).await?;
+        self.send(packet.buffer(buffer)).await?;
         // Wait for the device to finish its job.
         embassy_time::Timer::after(embassy_time::Duration::from_micros(
             (exec_time.unwrap_or(1) * 1000) as u64,
@@ -92,12 +92,9 @@ where
         Response::new(response_buffer)
     }
 
-    async fn send<T>(&mut self, bytes: &T) -> Result<(), Error>
-    where
-        T: AsRef<[u8]>,
-    {
+    async fn send(&mut self, bytes: &[u8]) -> Result<(), Error> {
         self.phy
-            .write(self.config.address, bytes.as_ref())
+            .write(self.config.address, bytes)
             .await
             .map_err(|_| ErrorKind::TxFail.into())
     }
@@ -217,7 +214,7 @@ where
         exec_time: Option<u32>,
     ) -> Result<Response<'a>, Error> {
         self.wake_blocking()?;
-        self.send_blocking(&packet.buffer(buffer))?;
+        self.send_blocking(packet.buffer(buffer))?;
         // Wait for the device to finish its job.
         embassy_time::Delay.delay_us(exec_time.unwrap_or(1) * 1000);
         let response_buffer = self.receive_blocking(buffer)?;
@@ -225,12 +222,9 @@ where
         Response::new(response_buffer)
     }
 
-    fn send_blocking<T>(&mut self, bytes: &T) -> Result<(), Error>
-    where
-        T: AsRef<[u8]>,
-    {
+    fn send_blocking(&mut self, bytes: &[u8]) -> Result<(), Error> {
         self.phy
-            .write(self.config.address, bytes.as_ref())
+            .write(self.config.address, bytes)
             .map_err(|_| ErrorKind::TxFail.into())
     }
 

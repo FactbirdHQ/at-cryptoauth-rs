@@ -1,5 +1,7 @@
 //! ECDSA signature verification operations
 
+use core::future::Future;
+
 use crate::command::PublicKey;
 use crate::error::Error;
 use crate::memory::Slot;
@@ -20,15 +22,13 @@ where
 {
     /// Takes a 32-byte digest (typically the SHA256 hash of the full message)
     /// and verifies it against the provided signature and public key.
-    pub async fn verify_digest(
+    pub fn verify_digest(
         &self,
         digest: &Digest,
         signature: &Signature,
         public_key: &PublicKey,
-    ) -> Result<(), Error> {
-        self.atca
-            .verify_external(digest, signature, public_key)
-            .await
+    ) -> impl Future<Output = Result<(), Error>> {
+        self.atca.verify_external(digest, signature, public_key)
     }
 
     pub async fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
