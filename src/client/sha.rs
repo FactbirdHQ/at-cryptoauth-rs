@@ -68,13 +68,13 @@ where
         Ok(())
     }
 
-    pub async fn update(&mut self, data: impl AsRef<[u8]>) -> Result<(), Error> {
+    pub async fn update(&mut self, data: &[u8]) -> Result<(), Error> {
         let capacity = 0x40;
-        let length = data.as_ref().len();
+        let length = data.len();
 
         // Store remaining bytes for later processing
-        let remainder_length = data.as_ref().len() % capacity;
-        let (bytes, remainder) = data.as_ref().split_at(length - remainder_length);
+        let remainder_length = data.len() % capacity;
+        let (bytes, remainder) = data.split_at(length - remainder_length);
         self.remaining_bytes.extend_from_slice(remainder).ok();
 
         // Execute update command
@@ -88,7 +88,7 @@ where
         Ok(())
     }
 
-    pub async fn chain(&mut self, data: impl AsRef<[u8]>) -> Result<&mut Self, Error> {
+    pub async fn chain(&mut self, data: &[u8]) -> Result<&mut Self, Error> {
         if self.remaining_bytes.len() != 0 {
             // TODO: Concatenate remaining bytes and input data.
         }
@@ -129,13 +129,13 @@ where
         Ok(())
     }
 
-    pub fn update_blocking(&mut self, data: impl AsRef<[u8]>) -> Result<(), Error> {
+    pub fn update_blocking(&mut self, data: &[u8]) -> Result<(), Error> {
         let capacity = 0x40;
-        let length = data.as_ref().len();
+        let length = data.len();
 
         // Store remaining bytes for later processing
-        let remainder_length = data.as_ref().len() % capacity;
-        let (bytes, remainder) = data.as_ref().split_at(length - remainder_length);
+        let remainder_length = data.len() % capacity;
+        let (bytes, remainder) = data.split_at(length - remainder_length);
         self.remaining_bytes.extend_from_slice(remainder).ok();
 
         let mut inner = self
@@ -153,7 +153,7 @@ where
         Ok(())
     }
 
-    pub fn chain_blocking(&mut self, data: impl AsRef<[u8]>) -> Result<&mut Self, Error> {
+    pub fn chain_blocking(&mut self, data: &[u8]) -> Result<&mut Self, Error> {
         if self.remaining_bytes.len() != 0 {
             // TODO: Concatenate remaining bytes and input data.
         }

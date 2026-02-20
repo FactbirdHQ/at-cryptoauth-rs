@@ -49,11 +49,7 @@ where
         Ok(pubkey)
     }
 
-    pub async fn write_pubkey(
-        &mut self,
-        key_id: Slot,
-        pubkey: impl AsRef<[u8]>,
-    ) -> Result<(), Error> {
+    pub async fn write_pubkey(&mut self, key_id: Slot, pubkey: &[u8]) -> Result<(), Error> {
         let mut data = Block::default();
         let mut offset = 0;
 
@@ -63,7 +59,7 @@ where
 
             for range in ranges {
                 let src = offset..offset + range.len();
-                data.as_mut()[range.clone()].copy_from_slice(&pubkey.as_ref()[src]);
+                data.as_mut()[range.clone()].copy_from_slice(&pubkey[src]);
                 offset += range.len();
             }
 
@@ -74,14 +70,10 @@ where
         Ok(())
     }
 
-    pub async fn write_aes_key(
-        &mut self,
-        key_id: Slot,
-        aes_key: impl AsRef<[u8]>,
-    ) -> Result<(), Error> {
+    pub async fn write_aes_key(&mut self, key_id: Slot, aes_key: &[u8]) -> Result<(), Error> {
         let mut inner = self.atca.inner.lock().await;
         let mut data = Block::default();
-        data.as_mut()[..0x10].copy_from_slice(aes_key.as_ref());
+        data.as_mut()[..0x10].copy_from_slice(aes_key);
         let packet = command::Write::new(inner.packet_builder()).slot(key_id, 0 as u8, &data)?;
         inner.execute(packet).await.map(drop)
     }
@@ -216,7 +208,7 @@ where
         size: Size,
         block: u8,
         offset: u8,
-        data: impl AsRef<[u8]>,
+        data: &[u8],
     ) -> Result<(), Error> {
         let mut inner = self.atca.inner.lock().await;
         let packet = command::Write::new(inner.packet_builder()).write(
@@ -340,11 +332,7 @@ where
         Ok(pubkey)
     }
 
-    pub fn write_pubkey_blocking(
-        &mut self,
-        key_id: Slot,
-        pubkey: impl AsRef<[u8]>,
-    ) -> Result<(), Error> {
+    pub fn write_pubkey_blocking(&mut self, key_id: Slot, pubkey: &[u8]) -> Result<(), Error> {
         let mut data = Block::default();
         let mut offset = 0;
         let mut inner = self
@@ -358,7 +346,7 @@ where
 
             for range in ranges {
                 let src = offset..offset + range.len();
-                data.as_mut()[range.clone()].copy_from_slice(&pubkey.as_ref()[src]);
+                data.as_mut()[range.clone()].copy_from_slice(&pubkey[src]);
                 offset += range.len();
             }
 
@@ -369,18 +357,14 @@ where
         Ok(())
     }
 
-    pub fn write_aes_key_blocking(
-        &mut self,
-        key_id: Slot,
-        aes_key: impl AsRef<[u8]>,
-    ) -> Result<(), Error> {
+    pub fn write_aes_key_blocking(&mut self, key_id: Slot, aes_key: &[u8]) -> Result<(), Error> {
         let mut inner = self
             .atca
             .inner
             .try_lock()
             .map_err(|_| ErrorKind::MutexLocked)?;
         let mut data = Block::default();
-        data.as_mut()[..0x10].copy_from_slice(aes_key.as_ref());
+        data.as_mut()[..0x10].copy_from_slice(aes_key);
         let packet = command::Write::new(inner.packet_builder()).slot(key_id, 0 as u8, &data)?;
         inner.execute_blocking(packet).map(drop)
     }
@@ -533,7 +517,7 @@ where
         size: Size,
         block: u8,
         offset: u8,
-        data: impl AsRef<[u8]>,
+        data: &[u8],
     ) -> Result<(), Error> {
         let mut inner = self
             .atca

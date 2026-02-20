@@ -65,11 +65,11 @@ impl<'a> PacketBuilder<'a> {
         self
     }
 
-    pub(crate) fn pdu_data(&mut self, data: impl AsRef<[u8]>) -> &mut Self {
-        let data_length = data.as_ref().len();
+    pub(crate) fn pdu_data(&mut self, data: &[u8]) -> &mut Self {
+        let data_length = data.len();
         self.buffer[PDU_OFFSET..PDU_OFFSET + data_length]
             .as_mut()
-            .copy_from_slice(data.as_ref());
+            .copy_from_slice(data);
         self.pdu_length.replace(data_length);
         self
     }

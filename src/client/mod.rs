@@ -34,8 +34,12 @@ pub use sha::Sha;
 pub use signing::SigningKey;
 pub use verifying::VerifyingKey;
 
+use core::future::Future;
+
 use crate::clock_divider::ClockDivider;
-use crate::command::{Ecdh, GenKey, Info, NonceCtx, PrivWrite, PublicKey, SharedSecret, Word};
+use crate::command::{
+    self, Ecdh, GenKey, Info, NonceCtx, PrivWrite, PublicKey, SharedSecret, Word,
+};
 use crate::datalink::{I2c, I2cConfig};
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Slot, Zone};
@@ -58,7 +62,7 @@ impl<PHY> Inner<PHY> {
         self.buffer.clear();
         self.buffer
             .resize(capacity, 0x00u8)
-            .unwrap_or_else(|()| unreachable!("Input length equals to the current capacity."));
+            .unwrap_or_else(|_| unreachable!("Input length equals to the current capacity."));
         PacketBuilder::new(&mut self.buffer)
     }
 }
@@ -67,9 +71,12 @@ impl<PHY> Inner<PHY>
 where
     PHY: embedded_hal_async::i2c::I2c,
 {
-    pub(crate) async fn execute(&mut self, packet: Packet) -> Result<Response<'_>, Error> {
+    pub(crate) fn execute(
+        &mut self,
+        packet: Packet,
+    ) -> impl Future<Output = Result<Response<'_>, Error>> {
         let exec_time = self.clock_divider.execution_time(packet.opcode());
-        self.i2c.execute(&mut self.buffer, packet, exec_time).await
+        self.i2c.execute(&mut self.buffer, packet, exec_time)
     }
 }
 
@@ -173,6 +180,13 @@ where
         inner.execute(packet).await?.as_ref().try_into()
     }
 
+    /// Issue a Random command to update the ATECC's internal RNG seed, discarding the output.
+    pub(crate) async fn update_seed(&self) -> Result<(), Error> {
+        let mut inner = self.inner.lock().await;
+        let packet = command::Random::new(inner.packet_builder()).random()?;
+        inner.execute(packet).await.map(drop)
+    }
+
     /// Write to device's digest message buffer
     pub async fn write_message_digest_buffer(&self, msg: &Digest) -> Result<(), Error> {
         let mut inner = self.inner.lock().await;
@@ -212,6 +226,28 @@ where
         let packet = Ecdh::new(inner.packet_builder()).diffie_hellman(key_id, public_key)?;
         inner.execute(packet).await?.as_ref().try_into()
     }
+
+    /// Verify a signature over a pre-hashed digest using an external public key.
+    ///
+    /// Atomically writes the digest to the message buffer and executes the
+    /// Verify command under a single lock acquisition.
+    pub async fn verify_external(
+        &self,
+        digest: &Digest,
+        signature: &p256::ecdsa::Signature,
+        public_key: &PublicKey,
+    ) -> Result<(), Error> {
+        let mut inner = self.inner.lock().await;
+
+        let packet = NonceCtx::new(inner.packet_builder()).message_digest_buffer(digest)?;
+        inner.execute(packet).await?;
+
+        let packet =
+            command::Verify::new(inner.packet_builder()).external(signature, public_key)?;
+        inner.execute(packet).await?;
+
+        Ok(())
+    }
 }
 
 impl<M, PHY> AtCaClient<M, PHY>
@@ -228,6 +264,13 @@ where
         let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
         let packet = Info::new(inner.packet_builder()).revision()?;
         inner.execute_blocking(packet)?.as_ref().try_into()
+    }
+
+    /// Issue a Random command to update the ATECC's internal RNG seed, discarding the output.
+    pub(crate) fn update_seed_blocking(&self) -> Result<(), Error> {
+        let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+        let packet = command::Random::new(inner.packet_builder()).random()?;
+        inner.execute_blocking(packet).map(drop)
     }
 
     /// Write to device's digest message buffer
@@ -272,5 +315,27 @@ where
         let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
         let packet = Ecdh::new(inner.packet_builder()).diffie_hellman(key_id, public_key)?;
         inner.execute_blocking(packet)?.as_ref().try_into()
+    }
+
+    /// Verify a signature over a pre-hashed digest using an external public key.
+    ///
+    /// Atomically writes the digest to the message buffer and executes the
+    /// Verify command under a single lock acquisition.
+    pub fn verify_external_blocking(
+        &self,
+        digest: &Digest,
+        signature: &p256::ecdsa::Signature,
+        public_key: &PublicKey,
+    ) -> Result<(), Error> {
+        let mut inner = self.inner.try_lock().map_err(|_| ErrorKind::MutexLocked)?;
+
+        let packet = NonceCtx::new(inner.packet_builder()).message_digest_buffer(digest)?;
+        inner.execute_blocking(packet)?;
+
+        let packet =
+            command::Verify::new(inner.packet_builder()).external(signature, public_key)?;
+        inner.execute_blocking(packet)?;
+
+        Ok(())
     }
 }
