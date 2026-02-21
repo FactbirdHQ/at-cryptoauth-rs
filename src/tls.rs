@@ -15,7 +15,7 @@ use der::{Choice, Decode, Enumerated, Reader, Sequence, SliceReader, ValueOrd};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_tls::{
     Aes128GcmSha256, Certificate, CertificateEntryRef, CertificateRef, CertificateVerifyRef,
-    SignatureScheme, TlsError, TlsVerifier,
+    NoVerify, SignatureScheme, TlsError, TlsVerifier,
 };
 use heapless::Vec;
 use sha2::Digest as _;
@@ -368,6 +368,52 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// Verifier — dispatches to AteccVerifier or NoVerify
+// ---------------------------------------------------------------------------
+
+enum Verifier<'a, M: RawMutex, PHY> {
+    Atecc(AteccVerifier<'a, M, PHY>),
+    NoVerify(NoVerify),
+}
+
+impl<M, PHY> TlsVerifier<Aes128GcmSha256> for Verifier<'_, M, PHY>
+where
+    M: RawMutex,
+    PHY: embedded_hal::i2c::I2c,
+{
+    fn set_hostname_verification(&mut self, hostname: &str) -> Result<(), TlsError> {
+        match self {
+            Self::Atecc(v) => v.set_hostname_verification(hostname),
+            Self::NoVerify(v) => {
+                <NoVerify as TlsVerifier<Aes128GcmSha256>>::set_hostname_verification(v, hostname)
+            }
+        }
+    }
+
+    fn verify_certificate(
+        &mut self,
+        transcript: &sha2::Sha256,
+        cert: CertificateRef,
+    ) -> Result<(), TlsError> {
+        match self {
+            Self::Atecc(v) => v.verify_certificate(transcript, cert),
+            Self::NoVerify(v) => {
+                <NoVerify as TlsVerifier<Aes128GcmSha256>>::verify_certificate(v, transcript, cert)
+            }
+        }
+    }
+
+    fn verify_signature(&mut self, verify: CertificateVerifyRef) -> Result<(), TlsError> {
+        match self {
+            Self::Atecc(v) => v.verify_signature(verify),
+            Self::NoVerify(v) => {
+                <NoVerify as TlsVerifier<Aes128GcmSha256>>::verify_signature(v, verify)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // AteccProvider
 // ---------------------------------------------------------------------------
 
@@ -375,7 +421,7 @@ pub struct AteccProvider<'a, M: RawMutex, PHY, const CERT_SIZE: usize = 0> {
     atca: &'a AtCaClient<M, PHY>,
     sign_key: Slot,
     client_cert_source: Option<CertSource<'a>>,
-    verifier: AteccVerifier<'a, M, PHY>,
+    verifier: Verifier<'a, M, PHY>,
 }
 
 impl<'a, M: RawMutex, PHY> AteccProvider<'a, M, PHY, 0> {
@@ -388,7 +434,20 @@ impl<'a, M: RawMutex, PHY> AteccProvider<'a, M, PHY, 0> {
             atca,
             sign_key,
             client_cert_source: None,
-            verifier: AteccVerifier::new(atca, ca_pubkey_source),
+            verifier: Verifier::Atecc(AteccVerifier::new(atca, ca_pubkey_source)),
+        }
+    }
+
+    /// Create a provider that skips server certificate verification.
+    ///
+    /// Useful for development, testing, or connecting to servers with
+    /// self-signed certificates. **Not recommended for production use.**
+    pub fn new_unverified(atca: &'a AtCaClient<M, PHY>, sign_key: Slot) -> Self {
+        Self {
+            atca,
+            sign_key,
+            client_cert_source: None,
+            verifier: Verifier::NoVerify(NoVerify),
         }
     }
 
