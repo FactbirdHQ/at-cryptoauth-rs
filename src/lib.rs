@@ -74,4 +74,4 @@ pub use p256::ecdsa::Signature;
 #[cfg(feature = "embedded-tls")]
 mod tls;
 #[cfg(feature = "embedded-tls")]
-pub use tls::{AteccProvider, AteccVerifier};
+pub use tls::{AteccProvider, AteccVerifier, CertSource, RootCaSource};

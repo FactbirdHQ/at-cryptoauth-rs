@@ -86,8 +86,6 @@ The `cert` module provides X.509 certificate types including the ATECC 72-byte c
 - Only the ATECC608A is supported. Other devices in the CryptoAuth family (ATECC508A, ATECC108A) are not tested.
 - I2C is the only supported transport (no SWI/single-wire).
 - The blocking API is not thread-safe — it returns `ErrorKind::MutexLocked` if the client is already in use.
-- The `embedded-tls` provider does not perform certificate verification; the caller is responsible for trust anchor validation.
-
 ## References
 
 - [ATECC608A Datasheet](https://atecc608a.github.io/ATECC608A.pdf)
