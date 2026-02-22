@@ -18,7 +18,7 @@ use crate::{
     PublicKey,
     command::Serial,
     error::{Error, ErrorKind},
-    memory::Slot,
+    memory::{Slot, SlotAddress},
 };
 
 use super::time::{Time, Validity};
@@ -234,25 +234,36 @@ impl CompressedDate {
 
 /// Source of certificate serial number
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
 pub enum SerialSource {
-    /// Serial is stored in a slot on the device
-    Stored = 0x00,
+    /// Serial is stored in a Data08 block on the device
+    Stored(SlotAddress),
     /// Serial is 0x40 | device_sn[0..9] (device certificates only)
-    DeviceSerial = 0x01,
+    DeviceSerial,
     /// Serial is 0x40 | signer_id[0..2] (signer certificates only)
-    SignerId = 0x02,
+    SignerId,
     /// Serial is SHA256(subject public key + encoded dates) with upper 2 bits = 01
-    PubKeyHash = 0x03,
+    PubKeyHash,
     /// Serial is SHA256(device SN + encoded dates) with upper 2 bits = 01
-    DeviceSerialHash = 0x04,
+    DeviceSerialHash,
 }
 
 impl SerialSource {
-    /// Generate serial number into provided buffer
+    /// Tag byte stored in CompressedCertificate byte 71
+    pub fn to_tag(&self) -> u8 {
+        match self {
+            SerialSource::Stored(_) => 0x00,
+            SerialSource::DeviceSerial => 0x01,
+            SerialSource::SignerId => 0x02,
+            SerialSource::PubKeyHash => 0x03,
+            SerialSource::DeviceSerialHash => 0x04,
+        }
+    }
+
+    /// Generate serial number into provided buffer.
     ///
     /// Returns the slice of the buffer containing the serial number.
-    /// The serial number format depends on the source type.
+    /// `Stored` variants cannot be generated — they are read from the
+    /// device by `Memory::read_certificate` transparently.
     pub fn generate<'a>(
         &self,
         device_serial: &Serial,
@@ -260,8 +271,8 @@ impl SerialSource {
         output: &'a mut [u8; 16],
     ) -> Result<&'a [u8], Error> {
         match self {
-            SerialSource::Stored => {
-                // Stored serial is handled externally
+            SerialSource::Stored(_) => {
+                // Handled by Memory::read_certificate, not here
                 Err(ErrorKind::BadParam.into())
             }
             SerialSource::DeviceSerial => {
@@ -277,8 +288,6 @@ impl SerialSource {
                 Ok(&output[..3])
             }
             SerialSource::PubKeyHash | SerialSource::DeviceSerialHash => {
-                // Hash-based serials require SHA256 computation on device
-                // This is a placeholder - actual implementation needs device SHA
                 Err(ErrorKind::Unimplemented.into())
             }
         }
@@ -433,8 +442,8 @@ impl CompressedCertificate {
     }
 
     /// Set the serial number source
-    pub fn set_serial_source(&mut self, source: SerialSource) {
-        self.data[Self::SERIAL_SOURCE_OFFSET] = source as u8;
+    pub fn set_serial_source(&mut self, source: &SerialSource) {
+        self.data[Self::SERIAL_SOURCE_OFFSET] = source.to_tag();
     }
 
     /// Get the raw bytes
@@ -523,6 +532,69 @@ pub struct CertificateDefinition<'a> {
 }
 
 impl<'a> CertificateDefinition<'a> {
+    /// Extract the serial number bytes from a DER certificate
+    pub fn extract_serial<'b>(&self, der_cert: &'b [u8]) -> &'b [u8] {
+        let offset = self.serial_number.offset as usize;
+        let count = self.serial_number.count as usize;
+        &der_cert[offset..offset + count]
+    }
+
+    /// Compress a DER certificate into the 72-byte ATECC format
+    ///
+    /// Extracts signature (R,S), validity dates, and metadata from the DER
+    /// certificate at the offsets defined by this CertificateDefinition.
+    /// This is the inverse of [`reconstruct()`].
+    pub fn compress(&self, der_cert: &[u8]) -> Result<CompressedCertificate, Error> {
+        let mut cc = CompressedCertificate::zeroed();
+
+        // Extract signature from DER and convert to R,S
+        if self.signature.count > 0 {
+            let offset = self.signature.offset as usize;
+            let count = self.signature.count as usize;
+            if offset + count > der_cert.len() {
+                return Err(ErrorKind::BadParam.into());
+            }
+            let sig_bytes = &der_cert[offset..offset + count];
+            let signature = p256::ecdsa::Signature::from_der(sig_bytes)
+                .map_err(|_| ErrorKind::BadParam)?;
+            let fixed = signature.to_bytes();
+            cc.set_signature(
+                fixed[..32].try_into().unwrap(),
+                fixed[32..].try_into().unwrap(),
+            );
+        }
+
+        // Extract and compress validity dates
+        if self.issue_date.count > 0 && self.expire_date.count > 0 {
+            let issue_offset = self.issue_date.offset as usize;
+            let issue_count = self.issue_date.count as usize;
+            let expire_offset = self.expire_date.offset as usize;
+            let expire_count = self.expire_date.count as usize;
+
+            if issue_offset + issue_count > der_cert.len()
+                || expire_offset + expire_count > der_cert.len()
+            {
+                return Err(ErrorKind::BadParam.into());
+            }
+
+            let issue_bytes = &der_cert[issue_offset..issue_offset + issue_count];
+            let expire_bytes = &der_cert[expire_offset..expire_offset + expire_count];
+
+            let not_before = parse_time(issue_bytes)?;
+            let not_after = parse_time(expire_bytes)?;
+            let validity = Validity {
+                not_before,
+                not_after,
+            };
+            cc.set_encoded_date(CompressedDate::from_validity(&validity)?);
+        }
+
+        // Set serial source tag
+        cc.set_serial_source(&self.serial_source);
+
+        Ok(cc)
+    }
+
     /// Reconstruct full DER certificate from compressed cert + template
     ///
     /// # Arguments
@@ -623,6 +695,44 @@ impl<'a> CertificateDefinition<'a> {
         }
 
         Ok(len)
+    }
+}
+
+/// Parse an ASN.1 time string (UTCTime or GeneralizedTime) into a Time value
+fn parse_time(bytes: &[u8]) -> Result<Time, Error> {
+    // UTCTime: YYMMDDHHmmssZ (13 bytes)
+    // GeneralizedTime: YYYYMMDDHHmmssZ (15 bytes)
+    let (year, rest) = if bytes.len() == 13 {
+        let yy = (bytes[0] - b'0') as u16 * 10 + (bytes[1] - b'0') as u16;
+        let year = if yy >= 50 { 1900 + yy } else { 2000 + yy };
+        (year, &bytes[2..])
+    } else if bytes.len() == 15 {
+        let year = (bytes[0] - b'0') as u16 * 1000
+            + (bytes[1] - b'0') as u16 * 100
+            + (bytes[2] - b'0') as u16 * 10
+            + (bytes[3] - b'0') as u16;
+        (year, &bytes[4..])
+    } else {
+        return Err(ErrorKind::BadParam.into());
+    };
+
+    let month = (rest[0] - b'0') * 10 + (rest[1] - b'0');
+    let day = (rest[2] - b'0') * 10 + (rest[3] - b'0');
+    let hour = (rest[4] - b'0') * 10 + (rest[5] - b'0');
+    let min = (rest[6] - b'0') * 10 + (rest[7] - b'0');
+    let sec = (rest[8] - b'0') * 10 + (rest[9] - b'0');
+
+    let dt = der::DateTime::new(year, month, day, hour, min, sec)
+        .map_err(|_| ErrorKind::BadParam)?;
+
+    if year >= 2050 {
+        Ok(Time::GeneralTime(
+            der::asn1::GeneralizedTime::from_date_time(dt),
+        ))
+    } else {
+        Ok(Time::UtcTime(
+            der::asn1::UtcTime::from_date_time(dt).map_err(|_| ErrorKind::BadParam)?,
+        ))
     }
 }
 
@@ -755,13 +865,12 @@ mod tests {
         cert.set_chain_id(3);
         assert_eq!(cert.chain_id(), 3);
 
-        cert.set_serial_source(SerialSource::DeviceSerial);
-        assert_eq!(cert.serial_source(), SerialSource::DeviceSerial as u8);
+        cert.set_serial_source(&SerialSource::DeviceSerial);
+        assert_eq!(cert.serial_source(), SerialSource::DeviceSerial.to_tag());
     }
 
     #[test]
     fn test_serial_source_device_serial() {
-        // Create a mock serial with known values
         let serial_bytes = [0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x12];
         let device_serial = Serial::new_for_test(&serial_bytes);
 
@@ -777,7 +886,6 @@ mod tests {
 
     #[test]
     fn test_serial_source_signer_id() {
-        // Create a dummy serial (not used for SignerId)
         let serial_bytes = [0u8; 9];
         let device_serial = Serial::new_for_test(&serial_bytes);
 
@@ -790,5 +898,19 @@ mod tests {
         assert_eq!(result[0], 0x40);
         assert_eq!(result[1], 0xAB);
         assert_eq!(result[2], 0xCD);
+    }
+
+    #[test]
+    fn test_serial_source_stored_returns_error() {
+        use crate::memory::SlotAddress;
+
+        let serial_bytes = [0u8; 9];
+        let device_serial = Serial::new_for_test(&serial_bytes);
+
+        let mut output = [0u8; 16];
+        // Stored cannot be generated — it must be read from device
+        assert!(SerialSource::Stored(SlotAddress::Data08(0))
+            .generate(&device_serial, 0, &mut output)
+            .is_err());
     }
 }
