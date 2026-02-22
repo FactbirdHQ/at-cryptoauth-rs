@@ -555,8 +555,8 @@ impl<'a> CertificateDefinition<'a> {
                 return Err(ErrorKind::BadParam.into());
             }
             let sig_bytes = &der_cert[offset..offset + count];
-            let signature = p256::ecdsa::Signature::from_der(sig_bytes)
-                .map_err(|_| ErrorKind::BadParam)?;
+            let signature =
+                p256::ecdsa::Signature::from_der(sig_bytes).map_err(|_| ErrorKind::BadParam)?;
             let fixed = signature.to_bytes();
             cc.set_signature(
                 fixed[..32].try_into().unwrap(),
@@ -722,8 +722,8 @@ fn parse_time(bytes: &[u8]) -> Result<Time, Error> {
     let min = (rest[6] - b'0') * 10 + (rest[7] - b'0');
     let sec = (rest[8] - b'0') * 10 + (rest[9] - b'0');
 
-    let dt = der::DateTime::new(year, month, day, hour, min, sec)
-        .map_err(|_| ErrorKind::BadParam)?;
+    let dt =
+        der::DateTime::new(year, month, day, hour, min, sec).map_err(|_| ErrorKind::BadParam)?;
 
     if year >= 2050 {
         Ok(Time::GeneralTime(
@@ -909,8 +909,10 @@ mod tests {
 
         let mut output = [0u8; 16];
         // Stored cannot be generated — it must be read from device
-        assert!(SerialSource::Stored(SlotAddress::Data08(0))
-            .generate(&device_serial, 0, &mut output)
-            .is_err());
+        assert!(
+            SerialSource::Stored(SlotAddress::Data08(0))
+                .generate(&device_serial, 0, &mut output)
+                .is_err()
+        );
     }
 }

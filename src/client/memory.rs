@@ -281,8 +281,7 @@ where
     /// Read a single 32-byte block from the Data08 slot.
     pub async fn read_data08_block(&mut self, block: u8) -> Result<Block, Error> {
         let mut inner = self.atca.inner.lock().await;
-        let packet =
-            command::Read::new(inner.packet_builder()).slot(Slot::Data08, block)?;
+        let packet = command::Read::new(inner.packet_builder()).slot(Slot::Data08, block)?;
         let response = inner.execute(packet).await?;
         Block::try_from(response.as_ref())
     }
@@ -290,8 +289,7 @@ where
     /// Write a single 32-byte block to the Data08 slot.
     pub async fn write_data08_block(&mut self, block: u8, data: &Block) -> Result<(), Error> {
         let mut inner = self.atca.inner.lock().await;
-        let packet =
-            command::Write::new(inner.packet_builder()).slot(Slot::Data08, block, data)?;
+        let packet = command::Write::new(inner.packet_builder()).slot(Slot::Data08, block, data)?;
         inner.execute(packet).await.map(drop)
     }
 
@@ -699,8 +697,7 @@ where
             .inner
             .try_lock()
             .map_err(|_| ErrorKind::MutexLocked)?;
-        let packet =
-            command::Read::new(inner.packet_builder()).slot(Slot::Data08, block)?;
+        let packet = command::Read::new(inner.packet_builder()).slot(Slot::Data08, block)?;
         let response = inner.execute_blocking(packet)?;
         Block::try_from(response.as_ref())
     }
@@ -712,8 +709,7 @@ where
             .inner
             .try_lock()
             .map_err(|_| ErrorKind::MutexLocked)?;
-        let packet =
-            command::Write::new(inner.packet_builder()).slot(Slot::Data08, block, data)?;
+        let packet = command::Write::new(inner.packet_builder()).slot(Slot::Data08, block, data)?;
         inner.execute_blocking(packet).map(drop)
     }
 
