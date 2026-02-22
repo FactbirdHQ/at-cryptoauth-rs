@@ -316,9 +316,26 @@ where
             }
         }
 
-        // Hostname verification
-        if self.host.is_some() && self.host != cn {
-            return Err(TlsError::InvalidCertificate);
+        // Hostname verification (supports leading wildcard, e.g. *.example.com)
+        if let Some(ref host) = self.host {
+            let ok = match cn {
+                Some(ref cn) => {
+                    if let Some(wildcard_rest) = cn.strip_prefix("*.") {
+                        // Wildcard: host must have at least one label before the
+                        // matching suffix, and must not itself be a wildcard.
+                        match host.find('.') {
+                            Some(dot) => host[dot + 1..] == *wildcard_rest,
+                            None => false,
+                        }
+                    } else {
+                        host.as_str() == cn.as_str()
+                    }
+                }
+                None => false,
+            };
+            if !ok {
+                return Err(TlsError::InvalidCertificate);
+            }
         }
 
         self.certificate_transcript = Some(transcript.clone().finalize().into());
