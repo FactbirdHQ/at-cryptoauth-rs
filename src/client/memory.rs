@@ -1,9 +1,10 @@
 //! Memory and configuration operations
 
 use crate::Block;
+use crate::cert::compressed::{CertificateDefinition, CompressedCertificate, SerialSource};
 use crate::command::{self, Lock, PublicKey, Serial, Word};
 use crate::error::{Error, ErrorKind};
-use crate::memory::{CertificateRepr, CompressedCertRepr, Size, Slot, Zone};
+use crate::memory::{CertificateRepr, CompressedCertRepr, Size, Slot, SlotAddress, Zone};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use super::AtCaClient;
@@ -277,19 +278,110 @@ where
         Ok(())
     }
 
+    /// Read a single 32-byte block from the Data08 slot.
+    pub async fn read_data08_block(&mut self, block: u8) -> Result<Block, Error> {
+        let mut inner = self.atca.inner.lock().await;
+        let packet = command::Read::new(inner.packet_builder()).slot(Slot::Data08, block)?;
+        let response = inner.execute(packet).await?;
+        Block::try_from(response.as_ref())
+    }
+
+    /// Write a single 32-byte block to the Data08 slot.
+    pub async fn write_data08_block(&mut self, block: u8, data: &Block) -> Result<(), Error> {
+        let mut inner = self.atca.inner.lock().await;
+        let packet = command::Write::new(inner.packet_builder()).slot(Slot::Data08, block, data)?;
+        inner.execute(packet).await.map(drop)
+    }
+
+    /// Read a block from a SlotAddress (dispatches between cert slots and Data08 blocks).
+    async fn read_addressed(&mut self, addr: &SlotAddress) -> Result<Block, Error> {
+        match addr {
+            SlotAddress::Data08(block) => self.read_data08_block(*block).await,
+            _ => Err(ErrorKind::BadParam.into()),
+        }
+    }
+
+    /// Write a block to a SlotAddress (dispatches between cert slots and Data08 blocks).
+    async fn write_addressed(&mut self, addr: &SlotAddress, data: &Block) -> Result<(), Error> {
+        match addr {
+            SlotAddress::Data08(block) => self.write_data08_block(*block, data).await,
+            _ => Err(ErrorKind::BadParam.into()),
+        }
+    }
+
     pub async fn read_certificate<'b>(
         &mut self,
-        def: &crate::cert::compressed::CertificateDefinition<'_>,
+        def: &CertificateDefinition<'_>,
         output: &'b mut [u8],
     ) -> Result<usize, Error> {
         let compressed = self.read_compressed_cert(def.compressed_slot).await?;
         let public_key = self.pubkey(def.public_key_slot).await?;
-        let device_serial = self.serial_number().await?;
-        let mut serial_buf = [0u8; 16];
-        let serial =
-            def.serial_source
-                .generate(&device_serial, compressed.signer_id(), &mut serial_buf)?;
+
+        let mut serial_buf = [0u8; 32];
+        let serial: &[u8] = if let SerialSource::Stored(addr) = &def.serial_source {
+            // Read serial directly from device storage
+            let block = self.read_addressed(addr).await?;
+            let count = def.serial_number.count as usize;
+            serial_buf[..count].copy_from_slice(&block.as_ref()[..count]);
+            &serial_buf[..count]
+        } else {
+            let device_serial = self.serial_number().await?;
+            let mut gen_buf = [0u8; 16];
+            let len = {
+                let s = def.serial_source.generate(
+                    &device_serial,
+                    compressed.signer_id(),
+                    &mut gen_buf,
+                )?;
+                s.len()
+            };
+            serial_buf[..len].copy_from_slice(&gen_buf[..len]);
+            &serial_buf[..len]
+        };
+
         def.reconstruct(&compressed, &public_key, serial, output)
+    }
+
+    /// Compress a DER certificate and write it to the ATECC.
+    ///
+    /// Writes the compressed cert to the cert slot, and if serial source
+    /// is `Stored`, writes the serial number to the addressed Data08 block.
+    pub async fn write_certificate(
+        &mut self,
+        def: &CertificateDefinition<'_>,
+        der_cert: &[u8],
+    ) -> Result<(), Error> {
+        let compressed = def.compress(der_cert)?;
+        self.write_compressed_cert(def.compressed_slot, &compressed)
+            .await?;
+
+        // If serial is stored externally, write it to the Data08 block
+        if let SerialSource::Stored(addr) = &def.serial_source {
+            let serial = def.extract_serial(der_cert);
+            let mut block = Block::default();
+            let count = serial.len().min(32);
+            block.as_mut()[..count].copy_from_slice(&serial[..count]);
+            self.write_addressed(addr, &block).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Erase a certificate from the ATECC (zero the cert slot and stored serial).
+    pub async fn erase_certificate(
+        &mut self,
+        def: &CertificateDefinition<'_>,
+    ) -> Result<(), Error> {
+        let zero_cert = CompressedCertificate::zeroed();
+        self.write_compressed_cert(def.compressed_slot, &zero_cert)
+            .await?;
+
+        if let SerialSource::Stored(addr) = &def.serial_source {
+            let zero_block = Block::default();
+            self.write_addressed(addr, &zero_block).await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -598,18 +690,106 @@ where
         Ok(())
     }
 
+    /// Read a single 32-byte block from the Data08 slot (blocking).
+    pub fn read_data08_block_blocking(&mut self, block: u8) -> Result<Block, Error> {
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
+        let packet = command::Read::new(inner.packet_builder()).slot(Slot::Data08, block)?;
+        let response = inner.execute_blocking(packet)?;
+        Block::try_from(response.as_ref())
+    }
+
+    /// Write a single 32-byte block to the Data08 slot (blocking).
+    pub fn write_data08_block_blocking(&mut self, block: u8, data: &Block) -> Result<(), Error> {
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
+        let packet = command::Write::new(inner.packet_builder()).slot(Slot::Data08, block, data)?;
+        inner.execute_blocking(packet).map(drop)
+    }
+
+    fn read_addressed_blocking(&mut self, addr: &SlotAddress) -> Result<Block, Error> {
+        match addr {
+            SlotAddress::Data08(block) => self.read_data08_block_blocking(*block),
+            _ => Err(ErrorKind::BadParam.into()),
+        }
+    }
+
+    fn write_addressed_blocking(&mut self, addr: &SlotAddress, data: &Block) -> Result<(), Error> {
+        match addr {
+            SlotAddress::Data08(block) => self.write_data08_block_blocking(*block, data),
+            _ => Err(ErrorKind::BadParam.into()),
+        }
+    }
+
     pub fn read_certificate_blocking<'b>(
         &mut self,
-        def: &crate::cert::compressed::CertificateDefinition<'_>,
+        def: &CertificateDefinition<'_>,
         output: &'b mut [u8],
     ) -> Result<usize, Error> {
         let compressed = self.read_compressed_cert_blocking(def.compressed_slot)?;
         let public_key = self.pubkey_blocking(def.public_key_slot)?;
-        let device_serial = self.serial_number_blocking()?;
-        let mut serial_buf = [0u8; 16];
-        let serial =
-            def.serial_source
-                .generate(&device_serial, compressed.signer_id(), &mut serial_buf)?;
+
+        let mut serial_buf = [0u8; 32];
+        let serial: &[u8] = if let SerialSource::Stored(addr) = &def.serial_source {
+            let block = self.read_addressed_blocking(addr)?;
+            let count = def.serial_number.count as usize;
+            serial_buf[..count].copy_from_slice(&block.as_ref()[..count]);
+            &serial_buf[..count]
+        } else {
+            let device_serial = self.serial_number_blocking()?;
+            let mut gen_buf = [0u8; 16];
+            let len = {
+                let s = def.serial_source.generate(
+                    &device_serial,
+                    compressed.signer_id(),
+                    &mut gen_buf,
+                )?;
+                s.len()
+            };
+            serial_buf[..len].copy_from_slice(&gen_buf[..len]);
+            &serial_buf[..len]
+        };
+
         def.reconstruct(&compressed, &public_key, serial, output)
+    }
+
+    pub fn write_certificate_blocking(
+        &mut self,
+        def: &CertificateDefinition<'_>,
+        der_cert: &[u8],
+    ) -> Result<(), Error> {
+        let compressed = def.compress(der_cert)?;
+        self.write_compressed_cert_blocking(def.compressed_slot, &compressed)?;
+
+        if let SerialSource::Stored(addr) = &def.serial_source {
+            let serial = def.extract_serial(der_cert);
+            let mut block = Block::default();
+            let count = serial.len().min(32);
+            block.as_mut()[..count].copy_from_slice(&serial[..count]);
+            self.write_addressed_blocking(addr, &block)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn erase_certificate_blocking(
+        &mut self,
+        def: &CertificateDefinition<'_>,
+    ) -> Result<(), Error> {
+        let zero_cert = CompressedCertificate::zeroed();
+        self.write_compressed_cert_blocking(def.compressed_slot, &zero_cert)?;
+
+        if let SerialSource::Stored(addr) = &def.serial_source {
+            let zero_block = Block::default();
+            self.write_addressed_blocking(addr, &zero_block)?;
+        }
+
+        Ok(())
     }
 }

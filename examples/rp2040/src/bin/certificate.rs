@@ -101,7 +101,7 @@ async fn main(_spawner: Spawner) {
     cert.set_chain_id(0);
 
     // Set serial number source
-    cert.set_serial_source(SerialSource::DeviceSerial);
+    cert.set_serial_source(&SerialSource::DeviceSerial);
 
     defmt::info!("Certificate fields:");
     defmt::info!("  Signature R: {:#04x}", cert.signature_r()[..8]);

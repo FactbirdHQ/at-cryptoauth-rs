@@ -39,6 +39,9 @@ impl Zone {
     pub(crate) fn get_slot_addr(&self, slot: Slot, block: u8) -> Result<u16, Error> {
         match self {
             Self::Data if slot.is_private_key() && block == 0 => Ok((slot as u16) << 3),
+            Self::Data if slot.is_data() && block <= 12 => {
+                Ok((slot as u16) << 3 | (block as u16) << 8)
+            }
             Self::Data if slot.is_certificate() && block <= 2 => {
                 Ok((slot as u16) << 3 | (block as u16) << 8)
             }
@@ -98,6 +101,11 @@ impl Slot {
         *self <= Self::PrivateKey07
     }
 
+    /// Check if a slot is the Data08 slot.
+    pub fn is_data(&self) -> bool {
+        *self == Self::Data08
+    }
+
     /// Check if a slot can store certificates.
     pub fn is_certificate(&self) -> bool {
         Self::Certificate09 <= *self
@@ -105,6 +113,65 @@ impl Slot {
 
     pub fn keys() -> KeysIter {
         KeysIter(0x00..=0x0f)
+    }
+}
+
+/// Superset of [`Slot`] where `Data08(u8)` carries a block index.
+///
+/// Used in [`SerialSource::Stored`] to identify exactly where a serial number
+/// is stored within the Data08 slot.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SlotAddress {
+    PrivateKey00,
+    PrivateKey01,
+    PrivateKey02,
+    PrivateKey03,
+    PrivateKey04,
+    PrivateKey05,
+    PrivateKey06,
+    PrivateKey07,
+    /// Data08 block index (0-12). Each block is 32 bytes.
+    Data08(u8),
+    Certificate09,
+    Certificate0a,
+    Certificate0b,
+    Certificate0c,
+    Certificate0d,
+    Certificate0e,
+    Certificate0f,
+}
+
+impl From<SlotAddress> for Slot {
+    fn from(addr: SlotAddress) -> Self {
+        match addr {
+            SlotAddress::PrivateKey00 => Slot::PrivateKey00,
+            SlotAddress::PrivateKey01 => Slot::PrivateKey01,
+            SlotAddress::PrivateKey02 => Slot::PrivateKey02,
+            SlotAddress::PrivateKey03 => Slot::PrivateKey03,
+            SlotAddress::PrivateKey04 => Slot::PrivateKey04,
+            SlotAddress::PrivateKey05 => Slot::PrivateKey05,
+            SlotAddress::PrivateKey06 => Slot::PrivateKey06,
+            SlotAddress::PrivateKey07 => Slot::PrivateKey07,
+            SlotAddress::Data08(_) => Slot::Data08,
+            SlotAddress::Certificate09 => Slot::Certificate09,
+            SlotAddress::Certificate0a => Slot::Certificate0a,
+            SlotAddress::Certificate0b => Slot::Certificate0b,
+            SlotAddress::Certificate0c => Slot::Certificate0c,
+            SlotAddress::Certificate0d => Slot::Certificate0d,
+            SlotAddress::Certificate0e => Slot::Certificate0e,
+            SlotAddress::Certificate0f => Slot::Certificate0f,
+        }
+    }
+}
+
+impl SlotAddress {
+    /// Get the block index for Data08 addresses, or 0 for all other slots.
+    pub fn block(&self) -> u8 {
+        match self {
+            SlotAddress::Data08(block) => *block,
+            _ => 0,
+        }
     }
 }
 
@@ -224,6 +291,16 @@ mod tests {
             let result = Data.get_slot_addr(Certificate0f, block).unwrap();
             assert_eq!(addr, result);
         }
+    }
+
+    #[test]
+    fn get_slot_addr_data08() {
+        // Data08 block 0
+        assert_eq!(0x0040, Data.get_slot_addr(Data08, 0).unwrap());
+        // Data08 block 12 (max)
+        assert_eq!(0x0C40, Data.get_slot_addr(Data08, 12).unwrap());
+        // Data08 block 13 should fail
+        assert!(Data.get_slot_addr(Data08, 13).is_err());
     }
 
     #[test]
