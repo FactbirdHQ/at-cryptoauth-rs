@@ -2,14 +2,13 @@
 
 use crate::PublicKey;
 
-use super::{attr::Attributes, name::Name, pem::PemWriter};
+use super::{attr::Attributes, name::Name};
 
 use der::{
-    Decode, DecodeValue, Encode as _, EncodeValue, Enumerated, FixedTag, Header, Length, Reader,
-    Sequence, Writer,
+    Decode, DecodeValue, EncodeValue, Enumerated, FixedTag, Header, Length, Reader, Sequence,
+    Writer,
 };
 use p256::{EncodedPoint, ecdsa::DerSignature};
-use pem_rfc7468::PemLabel;
 use spki::{AlgorithmIdentifierRef, ObjectIdentifier};
 
 /// Version identifier for certification request information.
@@ -75,12 +74,17 @@ pub struct CertReq<'a> {
     pub signature: SignatureBitString,
 }
 
+#[cfg(feature = "pem")]
 impl<'a> CertReq<'a> {
     pub fn to_pem_slice(
         &self,
         buf: &mut [u8],
         line_ending: pem_rfc7468::LineEnding,
     ) -> der::Result<usize> {
+        use super::pem::PemWriter;
+        use der::Encode;
+        use pem_rfc7468::PemLabel;
+
         let der_len = usize::try_from(self.encoded_len()?)?;
         let pem_len = pem_rfc7468::encapsulated_len(Self::PEM_LABEL, line_ending, der_len)
             .map_err(|_| der::ErrorKind::Failed)?;
@@ -223,7 +227,7 @@ impl EncodeValue for PublicKeyBitString {
 }
 
 #[cfg(feature = "pem")]
-impl<'a> PemLabel for CertReq<'a> {
+impl<'a> pem_rfc7468::PemLabel for CertReq<'a> {
     const PEM_LABEL: &'static str = "CERTIFICATE REQUEST";
 }
 

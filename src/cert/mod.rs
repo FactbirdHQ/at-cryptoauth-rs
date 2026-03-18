@@ -23,6 +23,7 @@ pub mod compressed;
 pub mod ext;
 mod macros;
 pub mod name;
+#[cfg(feature = "pem")]
 pub mod pem;
 pub mod request;
 pub mod serial_number;
