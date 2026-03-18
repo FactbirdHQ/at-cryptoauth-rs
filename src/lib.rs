@@ -66,6 +66,7 @@ pub use packet::CRC16;
 pub use signature;
 
 pub use der;
+#[cfg(feature = "pem")]
 pub use pem_rfc7468;
 pub use spki;
 

@@ -1,7 +1,6 @@
 use core::cmp::Ordering;
 
-use der::{Decode, Enumerated, Sequence, ValueOrd, asn1::BitStringRef};
-use pem_rfc7468::PemLabel;
+use der::{Enumerated, Sequence, ValueOrd, asn1::BitStringRef};
 use spki::{AlgorithmIdentifierRef, SubjectPublicKeyInfoRef};
 
 use super::{name::Name, serial_number::SerialNumber, time::Validity};
@@ -30,8 +29,12 @@ impl<'a> pem_rfc7468::PemLabel for Certificate<'a> {
     const PEM_LABEL: &'static str = "CERTIFICATE";
 }
 
+#[cfg(feature = "pem")]
 impl<'a> Certificate<'a> {
     pub fn from_pem(pem_bytes: &[u8], buf: &'a mut [u8]) -> der::Result<Self> {
+        use der::Decode;
+        use pem_rfc7468::PemLabel;
+
         let (label, der_bytes) =
             pem_rfc7468::decode(pem_bytes, buf).map_err(|_| der::ErrorKind::Failed)?;
         Self::validate_pem_label(label).map_err(|_| der::ErrorKind::Failed)?;
