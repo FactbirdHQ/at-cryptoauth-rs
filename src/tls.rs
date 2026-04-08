@@ -154,6 +154,10 @@ pub enum CertSource<'a> {
     Der(&'a [u8]),
     /// Compressed certificate reconstructed from ATECC608 at handshake time.
     Compressed(CertificateDefinition<'a>),
+    /// Certificate loaded on-demand via a loader function.
+    /// The function receives a buffer and returns the number of DER bytes
+    /// written, or `None` on failure.
+    Lazy(fn(&mut [u8]) -> Option<usize>),
 }
 
 impl<'a> From<&'a [u8]> for CertSource<'a> {
@@ -165,6 +169,12 @@ impl<'a> From<&'a [u8]> for CertSource<'a> {
 impl<'a> From<CertificateDefinition<'a>> for CertSource<'a> {
     fn from(def: CertificateDefinition<'a>) -> Self {
         Self::Compressed(def)
+    }
+}
+
+impl From<fn(&mut [u8]) -> Option<usize>> for CertSource<'_> {
+    fn from(loader: fn(&mut [u8]) -> Option<usize>) -> Self {
+        Self::Lazy(loader)
     }
 }
 
@@ -520,6 +530,13 @@ where
                     .memory()
                     .read_certificate_blocking(def, &mut buf)
                     .ok()?;
+                Some(Certificate::X509(
+                    heapless::Vec::<u8, CERT_SIZE>::from_slice(&buf[..len]).ok()?,
+                ))
+            }
+            CertSource::Lazy(loader) => {
+                let mut buf = [0u8; CERT_SIZE];
+                let len = loader(&mut buf)?;
                 Some(Certificate::X509(
                     heapless::Vec::<u8, CERT_SIZE>::from_slice(&buf[..len]).ok()?,
                 ))
