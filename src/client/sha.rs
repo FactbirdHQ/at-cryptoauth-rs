@@ -89,7 +89,7 @@ where
     }
 
     pub async fn chain(&mut self, data: &[u8]) -> Result<&mut Self, Error> {
-        if self.remaining_bytes.len() != 0 {
+        if !self.remaining_bytes.is_empty() {
             // TODO: Concatenate remaining bytes and input data.
         }
 
@@ -154,7 +154,7 @@ where
     }
 
     pub fn chain_blocking(&mut self, data: &[u8]) -> Result<&mut Self, Error> {
-        if self.remaining_bytes.len() != 0 {
+        if !self.remaining_bytes.is_empty() {
             // TODO: Concatenate remaining bytes and input data.
         }
 

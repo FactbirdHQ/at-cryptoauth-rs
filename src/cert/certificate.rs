@@ -102,11 +102,12 @@ pub struct TbsCertificate<'a> {
 /// ```
 ///
 /// [RFC 5280 Section 4.1]: https://datatracker.ietf.org/doc/html/rfc5280#section-4.1
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Enumerated)]
+#[derive(Clone, Debug, Copy, Default, PartialEq, Eq, Enumerated)]
 #[asn1(type = "INTEGER")]
 #[repr(u8)]
 pub enum Version {
     /// Version 1 (default)
+    #[default]
     V1 = 0,
 
     /// Version 2
@@ -119,12 +120,6 @@ pub enum Version {
 impl ValueOrd for Version {
     fn value_cmp(&self, other: &Self) -> der::Result<Ordering> {
         (*self as u8).value_cmp(&(*other as u8))
-    }
-}
-
-impl Default for Version {
-    fn default() -> Self {
-        Self::V1
     }
 }
 

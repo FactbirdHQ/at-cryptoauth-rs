@@ -129,7 +129,7 @@ where
 
         let length_to_read = match buffer[0] {
             // A single byte has already read.
-            length if length == 1 => return Ok(buffer[0..1].as_mut()),
+            1 => return Ok(buffer[0..1].as_mut()),
             // Buffer cannot contain the response to come. Abort.
             length if buffer.len() < length as usize => return Err(ErrorKind::CommFail.into()),
             // The coming response is malformed. Abort.
@@ -254,7 +254,7 @@ where
 
         let length_to_read = match buffer[0] {
             // A single byte has already read.
-            length if length == 1 => return Ok(buffer[0..1].as_mut()),
+            1 => return Ok(buffer[0..1].as_mut()),
             // Buffer cannot contain the response to come. Abort.
             length if buffer.len() < length as usize => return Err(ErrorKind::CommFail.into()),
             // The coming response is malformed. Abort.

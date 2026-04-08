@@ -36,10 +36,11 @@ struct AlgorithmIdentifier<'a> {
     parameters: Option<AnyRef<'a>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Enumerated)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Copy, Enumerated)]
 #[asn1(type = "INTEGER")]
 #[repr(u8)]
 enum Version {
+    #[default]
     V1 = 0,
     V2 = 1,
     V3 = 2,
@@ -48,12 +49,6 @@ enum Version {
 impl ValueOrd for Version {
     fn value_cmp(&self, other: &Self) -> der::Result<Ordering> {
         (*self as u8).value_cmp(&(*other as u8))
-    }
-}
-
-impl Default for Version {
-    fn default() -> Self {
-        Self::V1
     }
 }
 
@@ -130,12 +125,12 @@ fn extract_common_name<'a>(
     subject: &SequenceOf<SetOf<AttributeTypeAndValue<'a>, 1>, 7>,
 ) -> Option<heapless::String<64>> {
     for elems in subject.iter() {
-        if let Some(attr) = elems.get(0) {
-            if attr.oid == COMMON_NAME_OID {
-                let mut v: Vec<u8, 64> = Vec::new();
-                v.extend_from_slice(attr.value.value()).ok()?;
-                return heapless::String::from_utf8(v).ok();
-            }
+        if let Some(attr) = elems.get(0)
+            && attr.oid == COMMON_NAME_OID
+        {
+            let mut v: Vec<u8, 64> = Vec::new();
+            v.extend_from_slice(attr.value.value()).ok()?;
+            return heapless::String::from_utf8(v).ok();
         }
     }
     None
@@ -388,6 +383,7 @@ where
 // Verifier — dispatches to AteccVerifier or NoVerify
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::large_enum_variant)]
 enum Verifier<'a, M: RawMutex, PHY> {
     Atecc(AteccVerifier<'a, M, PHY>),
     NoVerify(NoVerify),

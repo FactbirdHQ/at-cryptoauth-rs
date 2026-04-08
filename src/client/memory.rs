@@ -75,7 +75,7 @@ where
         let mut inner = self.atca.inner.lock().await;
         let mut data = Block::default();
         data.as_mut()[..0x10].copy_from_slice(aes_key);
-        let packet = command::Write::new(inner.packet_builder()).slot(key_id, 0 as u8, &data)?;
+        let packet = command::Write::new(inner.packet_builder()).slot(key_id, 0u8, &data)?;
         inner.execute(packet).await.map(drop)
     }
 
@@ -190,6 +190,10 @@ where
         })
     }
 
+    /// # Safety
+    ///
+    /// Caller must ensure the config zone parameters (size, block, offset) are valid
+    /// for the target device and do not cause out-of-bounds reads.
     pub async unsafe fn read_config(
         &mut self,
         size: Size,
@@ -309,10 +313,10 @@ where
         }
     }
 
-    pub async fn read_certificate<'b>(
+    pub async fn read_certificate(
         &mut self,
         def: &CertificateDefinition<'_>,
-        output: &'b mut [u8],
+        output: &mut [u8],
     ) -> Result<usize, Error> {
         let compressed = self.read_compressed_cert(def.compressed_slot).await?;
         let public_key = self.pubkey(def.public_key_slot).await?;
@@ -457,7 +461,7 @@ where
             .map_err(|_| ErrorKind::MutexLocked)?;
         let mut data = Block::default();
         data.as_mut()[..0x10].copy_from_slice(aes_key);
-        let packet = command::Write::new(inner.packet_builder()).slot(key_id, 0 as u8, &data)?;
+        let packet = command::Write::new(inner.packet_builder()).slot(key_id, 0u8, &data)?;
         inner.execute_blocking(packet).map(drop)
     }
 
@@ -727,10 +731,10 @@ where
         }
     }
 
-    pub fn read_certificate_blocking<'b>(
+    pub fn read_certificate_blocking(
         &mut self,
         def: &CertificateDefinition<'_>,
-        output: &'b mut [u8],
+        output: &mut [u8],
     ) -> Result<usize, Error> {
         let compressed = self.read_compressed_cert_blocking(def.compressed_slot)?;
         let public_key = self.pubkey_blocking(def.public_key_slot)?;

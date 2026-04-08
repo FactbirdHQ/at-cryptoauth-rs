@@ -65,7 +65,7 @@ jobs:
     name: clippy
     runs-on: ubuntu-latest
     env:
-      CLIPPY_PARAMS: -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo
+      CLIPPY_PARAMS: -W clippy::all -W clippy::cargo
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4

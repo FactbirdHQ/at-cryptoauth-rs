@@ -167,16 +167,16 @@ impl<'a> Response<'a> {
             .try_into()
             .map(u16::from_le_bytes)
             .unwrap_or_else(|_| unreachable!());
-        if crc != CRC16.checksum(&payload) {
+        if crc != CRC16.checksum(payload) {
             return Err(ErrorKind::RxCrcError.into());
         }
 
         // Check error status. Error packets are always 4 bytes long.
         let (header, pdu) = payload.split_at(1);
-        if header[0] == 0x04 {
-            if let Ok(status) = Status::try_from(pdu[0]) {
-                return Err(status.into());
-            }
+        if header[0] == 0x04
+            && let Ok(status) = Status::try_from(pdu[0])
+        {
+            return Err(status.into());
         }
 
         Ok(Self { pdu })
