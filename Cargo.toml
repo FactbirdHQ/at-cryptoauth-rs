@@ -13,22 +13,21 @@ crc = { version = "3.0", default-features = false }
 heapless = "0.9"
 bitfield-struct = "0.9"
 
-log = { version = "^0.4", default-features = false, optional = true }
-defmt = { version = "^0.3", optional = true }
+log = { version = "0.4", default-features = false, optional = true }
+defmt = { version = "1", optional = true }
 
-embedded-hal = { version = "1.0" }
-embedded-hal-async = { version = "1.0" }
+embedded-hal = "1.0"
+embedded-hal-async = "1.0"
 
-embassy-time = { version = "0.5.0" }
-embassy-sync = { version = "0.7.2" }
-embassy-futures = { version = "0.1.2" }
+embassy-time = "0.5"
+embassy-sync = "0.8"
+embassy-futures = "0.1"
 
 signature = { version = "2.2", default-features = false, features = [
     "digest",
     "derive",
     "rand_core",
 ] }
-# async-signature = { version = "0.5", default-features = false, features = ["digest", "rand_core"] }
 embedded-tls = { git = "https://github.com/drogue-iot/embedded-tls", rev = "426f327", default-features = false, optional = true }
 sha2 = { version = "0.10", default-features = false, optional = true }
 
@@ -40,7 +39,7 @@ const-oid = { version = "0.9.6", features = ["db"] }
 der = { version = "0.7.8", features = ["derive", "flagset", "oid"] }
 spki = { version = "0.7.3" }
 pem-rfc7468 = { version = "0.7.0", optional = true }
-hex-literal = "0.4.1"
+hex-literal = "1.1"
 
 [features]
 default = ["embedded-tls", "pem"]

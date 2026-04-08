@@ -31,7 +31,7 @@ use super::time::{Time, Validity};
 /// - Bits 9-13: Day (1-31)
 /// - Bits 14-18: Hour (0-23)
 /// - Bits 19-23: Expire years (0-31 years validity)
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CompressedDate(u32);
 
 impl CompressedDate {
@@ -109,7 +109,7 @@ impl CompressedDate {
 
     /// Set month with validation (1-12)
     pub fn with_month_checked(self, month: u8) -> Result<Self, Error> {
-        if month < 1 || month > 12 {
+        if !(1..=12).contains(&month) {
             return Err(ErrorKind::BadParam.into());
         }
         Ok(self.with_month(month))
@@ -117,7 +117,7 @@ impl CompressedDate {
 
     /// Set day with validation (1-31)
     pub fn with_day_checked(self, day: u8) -> Result<Self, Error> {
-        if day < 1 || day > 31 {
+        if !(1..=31).contains(&day) {
             return Err(ErrorKind::BadParam.into());
         }
         Ok(self.with_day(day))

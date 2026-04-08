@@ -96,7 +96,7 @@ impl<'a> CertReq<'a> {
         let mut writer = PemWriter::new(Self::PEM_LABEL, line_ending, buf)?;
         self.encode(&mut writer)?;
 
-        Ok(writer.finish()?)
+        writer.finish()
     }
 }
 
@@ -153,7 +153,7 @@ impl EncodeValue for SignatureBitString {
 
     fn encode_value(&self, writer: &mut impl Writer) -> der::Result<()> {
         writer.write(&[0u8])?;
-        writer.write(&self.0.as_bytes())
+        writer.write(self.0.as_bytes())
     }
 }
 
@@ -222,7 +222,7 @@ impl EncodeValue for PublicKeyBitString {
         let point = EncodedPoint::from_untagged_bytes(&self.0.value);
 
         writer.write(&[0u8])?;
-        writer.write(&point.as_bytes())
+        writer.write(point.as_bytes())
     }
 }
 
