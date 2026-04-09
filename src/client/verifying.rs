@@ -33,8 +33,11 @@ where
 
     pub async fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
         let digest = self.atca.sha().digest(msg).await?;
-        let key_id = self.key_id;
-        let public_key = self.atca.generate_pubkey(key_id).await?;
+        let public_key = if self.key_id.is_certificate() {
+            self.atca.memory().pubkey(self.key_id).await?
+        } else {
+            self.atca.generate_pubkey(self.key_id).await?
+        };
         self.verify_digest(&digest, signature, &public_key).await
     }
 }
@@ -58,8 +61,11 @@ where
 
     pub fn verify_blocking(&self, msg: &[u8], signature: &Signature) -> Result<(), Error> {
         let digest = self.atca.sha().digest_blocking(msg)?;
-        let key_id = self.key_id;
-        let public_key = self.atca.generate_pubkey_blocking(key_id)?;
+        let public_key = if self.key_id.is_certificate() {
+            self.atca.memory().pubkey_blocking(self.key_id)?
+        } else {
+            self.atca.generate_pubkey_blocking(self.key_id)?
+        };
         self.verify_digest_blocking(&digest, signature, &public_key)
     }
 }
