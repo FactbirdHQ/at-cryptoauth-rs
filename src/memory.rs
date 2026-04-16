@@ -227,13 +227,13 @@ impl Iterator for CertificateRepr {
     }
 }
 
-/// Iterator for 72-byte compressed certificate storage in certificate slots
+/// Iterator for 72-byte compressed certificate storage in certificate slots.
 ///
-/// Compressed certificates use the same layout as public keys (64 bytes)
-/// plus an additional 8 bytes from block 2.
-/// Block 0: bytes 4-31 = 28 bytes -> cert[0:28]
-/// Block 1: bytes 0-3, 8-31 = 28 bytes -> cert[28:56]
-/// Block 2: bytes 0-15 = 16 bytes -> cert[56:72]
+/// Unlike public keys (which use a padded layout with reserved bytes per block),
+/// compressed certificates use straight linear storage across the 72-byte slot:
+/// Block 0: bytes 0-31 = 32 bytes -> cert[0:32]
+/// Block 1: bytes 0-31 = 32 bytes -> cert[32:64]
+/// Block 2: bytes 0-7  = 8 bytes  -> cert[64:72]
 pub(crate) struct CompressedCertRepr(RangeInclusive<usize>);
 
 impl CompressedCertRepr {
@@ -246,12 +246,9 @@ impl Iterator for CompressedCertRepr {
     type Item = &'static [Range<usize>];
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().and_then(|i| match i {
-            // Block 0: bytes 4-31 (28 bytes)
-            0 => from_ref(&(0x04..0x20)).into(),
-            // Block 1: bytes 0-3 (4 bytes) and 8-31 (24 bytes) = 28 bytes
-            1 => [0x00..0x04, 0x08..0x20].as_ref().into(),
-            // Block 2: bytes 0-15 (16 bytes) for the remaining 16 bytes of the 72-byte cert
-            2 => from_ref(&(0x00..0x10)).into(),
+            0 => from_ref(&(0x00..0x20)).into(),
+            1 => from_ref(&(0x00..0x20)).into(),
+            2 => from_ref(&(0x00..0x08)).into(),
             _ => None,
         })
     }
