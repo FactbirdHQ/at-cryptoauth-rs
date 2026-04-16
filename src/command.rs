@@ -418,20 +418,24 @@ impl<'a> Lock<'a> {
     }
 
     pub(crate) fn zone(&mut self, zone: Zone, crc: Option<u16>) -> Result<Packet, Error> {
-        if matches!(zone, Zone::Otp) {
-            return Err(ErrorKind::BadParam.into());
-        }
+        // Lock command uses its own zone encoding (bit 0: 0=Config, 1=Data/OTP),
+        // which differs from Read/Write (bits 1:0: 00=Config, 01=OTP, 02=Data).
+        let lock_zone = match zone {
+            Zone::Config => 0x00,
+            Zone::Data => 0x01,
+            Zone::Otp => return Err(ErrorKind::BadParam.into()),
+        };
 
         let packet = match crc {
             None => self
                 .0
                 .opcode(OpCode::Lock)
-                .mode(Self::LOCK_ZONE_NO_CRC | zone as u8)
+                .mode(Self::LOCK_ZONE_NO_CRC | lock_zone)
                 .build()?,
             Some(crc) => self
                 .0
                 .opcode(OpCode::Lock)
-                .mode(zone as u8)
+                .mode(lock_zone)
                 .param2(crc)
                 .build()?,
         };
