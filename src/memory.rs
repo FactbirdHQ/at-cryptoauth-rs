@@ -23,8 +23,8 @@ impl Size {
 #[derive(Copy, Clone, Debug)]
 pub enum Zone {
     Config = 0x00,
-    Data = 0x01,
-    Otp = 0x02,
+    Otp = 0x01,
+    Data = 0x02,
 }
 
 impl Zone {
