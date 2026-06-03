@@ -16,6 +16,7 @@ use at_cryptoauth::{
     AtCaClient,
     cert::compressed::{
         CertElement, CertificateDefinition, CompressedCertificate, CompressedDate, SerialSource,
+        SubjectSource,
     },
     memory::Slot,
 };
@@ -178,6 +179,8 @@ async fn main(_spawner: Spawner) {
         issue_date: CertElement::new(120, 13), // UTCTime is 13 bytes
         expire_date: CertElement::new(135, 13),
         serial_number: CertElement::new(10, 10), // Serial number location
+        subject: CertElement::new(0, 0),         // CN fixed in template
+        subject_source: SubjectSource::Template, // no per-device subject injection
         serial_source: SerialSource::DeviceSerial, // How to generate serial
         compressed_slot: Slot::Certificate09,    // Where compressed cert is stored
         public_key_slot: Slot::Certificate0a,    // Where public key is stored
