@@ -50,10 +50,10 @@ async fn main(_spawner: Spawner) {
     defmt::info!("--- Compressed Date Demo ---");
 
     // Create a compressed date representing:
-    // Issue: 2024-06-15 10:00
+    // Issue: 2026-06-15 10:00
     // Validity: 5 years
     let date = CompressedDate::new()
-        .with_year(24) // Year offset from 2000 (2024 = 24)
+        .with_year(1) // Year offset from BASE_YEAR (2026 = 2025 + 1)
         .with_month(6) // June
         .with_day(15) // 15th
         .with_hour(10) // 10:00
@@ -135,7 +135,7 @@ async fn main(_spawner: Spawner) {
             let stored_date = stored_cert.encoded_date();
             defmt::info!(
                 "  Date: {}-{:02}-{:02} {:02}:00, valid {} years",
-                2000 + stored_date.year() as u16,
+                CompressedDate::BASE_YEAR + stored_date.year() as u16,
                 stored_date.month(),
                 stored_date.day(),
                 stored_date.hour(),

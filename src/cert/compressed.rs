@@ -26,7 +26,7 @@ use super::time::{Time, Validity};
 /// 3-byte date encoding per Microchip format
 ///
 /// Layout (24 bits total, little-endian):
-/// - Bits 0-4: Year (years since 2000, valid 0-31 = 2000-2031)
+/// - Bits 0-4: Year (years since `BASE_YEAR`, valid 0-31 = 2025-2056)
 /// - Bits 5-8: Month (1-12)
 /// - Bits 9-13: Day (1-31)
 /// - Bits 14-18: Hour (0-23)
@@ -52,7 +52,7 @@ impl CompressedDate {
         Self(0)
     }
 
-    /// Get the year offset from 2000 (0-31)
+    /// Get the year offset from [`Self::BASE_YEAR`] (0-31)
     pub const fn year(&self) -> u8 {
         ((self.0 >> Self::YEAR_OFFSET) & Self::YEAR_MASK) as u8
     }
@@ -133,8 +133,15 @@ impl CompressedDate {
 }
 
 impl CompressedDate {
-    /// Base year for compressed date encoding
-    pub const BASE_YEAR: u16 = 2000;
+    /// Base year for compressed date encoding.
+    ///
+    /// The 5-bit year field encodes an offset 0-31, giving issue years
+    /// `BASE_YEAR..=BASE_YEAR + 31`. The base is *not* stored in the 72-byte
+    /// compressed cert — it is implicit in this constant on both the issuer and
+    /// the device, so a cert compressed under one base would reconstruct to a
+    /// different date (and thus a different, unverifiable TBS) under another.
+    /// It can only be changed before any device holds a compressed cert.
+    pub const BASE_YEAR: u16 = 2025;
 
     /// Maximum year offset (5 bits)
     pub const MAX_YEAR_OFFSET: u8 = 31;
@@ -152,7 +159,7 @@ impl CompressedDate {
             return Err(ErrorKind::BadParam.into());
         }
 
-        // Calculate year offset from 2000
+        // Calculate year offset from BASE_YEAR
         let year_offset = issue_date
             .year()
             .checked_sub(Self::BASE_YEAR)
@@ -841,12 +848,12 @@ mod tests {
 
     #[test]
     fn test_compressed_date_roundtrip() {
-        // Create a validity period: 2023-06-15 10:00 to 2028-06-15 10:00
+        // Create a validity period: 2026-06-15 10:00 to 2031-06-15 10:00
         let not_before = Time::UtcTime(
-            UtcTime::from_date_time(DateTime::new(2023, 6, 15, 10, 0, 0).unwrap()).unwrap(),
+            UtcTime::from_date_time(DateTime::new(2026, 6, 15, 10, 0, 0).unwrap()).unwrap(),
         );
         let not_after = Time::UtcTime(
-            UtcTime::from_date_time(DateTime::new(2028, 6, 15, 10, 0, 0).unwrap()).unwrap(),
+            UtcTime::from_date_time(DateTime::new(2031, 6, 15, 10, 0, 0).unwrap()).unwrap(),
         );
         let validity = Validity {
             not_before,
@@ -857,7 +864,7 @@ mod tests {
         let compressed = CompressedDate::from_validity(&validity).unwrap();
 
         // Verify fields
-        assert_eq!(compressed.year(), 23); // 2023 - 2000
+        assert_eq!(compressed.year(), 1); // 2026 - BASE_YEAR (2025)
         assert_eq!(compressed.month(), 6);
         assert_eq!(compressed.day(), 15);
         assert_eq!(compressed.hour(), 10);
@@ -868,11 +875,11 @@ mod tests {
         let decoded_issue = decoded.not_before.to_date_time();
         let decoded_expire = decoded.not_after.to_date_time();
 
-        assert_eq!(decoded_issue.year(), 2023);
+        assert_eq!(decoded_issue.year(), 2026);
         assert_eq!(decoded_issue.month(), 6);
         assert_eq!(decoded_issue.day(), 15);
         assert_eq!(decoded_issue.hour(), 10);
-        assert_eq!(decoded_expire.year(), 2028);
+        assert_eq!(decoded_expire.year(), 2031);
     }
 
     #[test]
