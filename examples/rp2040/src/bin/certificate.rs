@@ -16,6 +16,7 @@ use at_cryptoauth::{
     AtCaClient,
     cert::compressed::{
         CertElement, CertificateDefinition, CompressedCertificate, CompressedDate, SerialSource,
+        SubjectSource,
     },
     memory::Slot,
 };
@@ -49,10 +50,10 @@ async fn main(_spawner: Spawner) {
     defmt::info!("--- Compressed Date Demo ---");
 
     // Create a compressed date representing:
-    // Issue: 2024-06-15 10:00
+    // Issue: 2026-06-15 10:00
     // Validity: 5 years
     let date = CompressedDate::new()
-        .with_year(24) // Year offset from 2000 (2024 = 24)
+        .with_year(1) // Year offset from BASE_YEAR (2026 = 2025 + 1)
         .with_month(6) // June
         .with_day(15) // 15th
         .with_hour(10) // 10:00
@@ -134,7 +135,7 @@ async fn main(_spawner: Spawner) {
             let stored_date = stored_cert.encoded_date();
             defmt::info!(
                 "  Date: {}-{:02}-{:02} {:02}:00, valid {} years",
-                2000 + stored_date.year() as u16,
+                CompressedDate::BASE_YEAR + stored_date.year() as u16,
                 stored_date.month(),
                 stored_date.day(),
                 stored_date.hour(),
@@ -178,6 +179,8 @@ async fn main(_spawner: Spawner) {
         issue_date: CertElement::new(120, 13), // UTCTime is 13 bytes
         expire_date: CertElement::new(135, 13),
         serial_number: CertElement::new(10, 10), // Serial number location
+        subject: CertElement::new(0, 0),         // CN fixed in template
+        subject_source: SubjectSource::Template, // no per-device subject injection
         serial_source: SerialSource::DeviceSerial, // How to generate serial
         compressed_slot: Slot::Certificate09,    // Where compressed cert is stored
         public_key_slot: Slot::Certificate0a,    // Where public key is stored

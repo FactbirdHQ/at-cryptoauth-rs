@@ -26,7 +26,7 @@ use super::time::{Time, Validity};
 /// 3-byte date encoding per Microchip format
 ///
 /// Layout (24 bits total, little-endian):
-/// - Bits 0-4: Year (years since 2000, valid 0-31 = 2000-2031)
+/// - Bits 0-4: Year (years since `BASE_YEAR`, valid 0-31 = 2025-2056)
 /// - Bits 5-8: Month (1-12)
 /// - Bits 9-13: Day (1-31)
 /// - Bits 14-18: Hour (0-23)
@@ -52,7 +52,7 @@ impl CompressedDate {
         Self(0)
     }
 
-    /// Get the year offset from 2000 (0-31)
+    /// Get the year offset from [`Self::BASE_YEAR`] (0-31)
     pub const fn year(&self) -> u8 {
         ((self.0 >> Self::YEAR_OFFSET) & Self::YEAR_MASK) as u8
     }
@@ -133,8 +133,15 @@ impl CompressedDate {
 }
 
 impl CompressedDate {
-    /// Base year for compressed date encoding
-    pub const BASE_YEAR: u16 = 2000;
+    /// Base year for compressed date encoding.
+    ///
+    /// The 5-bit year field encodes an offset 0-31, giving issue years
+    /// `BASE_YEAR..=BASE_YEAR + 31`. The base is *not* stored in the 72-byte
+    /// compressed cert — it is implicit in this constant on both the issuer and
+    /// the device, so a cert compressed under one base would reconstruct to a
+    /// different date (and thus a different, unverifiable TBS) under another.
+    /// It can only be changed before any device holds a compressed cert.
+    pub const BASE_YEAR: u16 = 2025;
 
     /// Maximum year offset (5 bits)
     pub const MAX_YEAR_OFFSET: u8 = 31;
@@ -152,7 +159,7 @@ impl CompressedDate {
             return Err(ErrorKind::BadParam.into());
         }
 
-        // Calculate year offset from 2000
+        // Calculate year offset from BASE_YEAR
         let year_offset = issue_date
             .year()
             .checked_sub(Self::BASE_YEAR)
@@ -292,6 +299,27 @@ impl SerialSource {
             }
         }
     }
+}
+
+/// Source of the certificate subject value (e.g. a per-device common name).
+///
+/// Mirrors [`SerialSource`]: the subject is not stored in the compressed
+/// certificate, so one shared template can serve many devices and the
+/// per-device value is resolved at reconstruction time. The library stays
+/// agnostic to any device-identity convention — derivations live in the caller
+/// via [`SubjectSource::FromSerial`].
+#[derive(Clone, Copy, Debug)]
+pub enum SubjectSource<'a> {
+    /// Subject is fully fixed in the template; nothing is injected.
+    Template,
+    /// Inject these exact bytes at the subject element.
+    Provided(&'a [u8]),
+    /// Derive the subject from the device serial at reconstruction time.
+    ///
+    /// The function writes the value into the buffer and returns its length,
+    /// or `None` on failure. Lets the caller keep its own identity convention
+    /// (UUID format, etc.) without this library encoding it.
+    FromSerial(fn(&Serial, &mut [u8]) -> Option<usize>),
 }
 
 /// 72-byte compressed certificate stored on device
@@ -523,6 +551,15 @@ pub struct CertificateDefinition<'a> {
     pub expire_date: CertElement,
     /// Where to insert serial number
     pub serial_number: CertElement,
+    /// Where to insert the subject value (e.g. a per-device common name)
+    ///
+    /// The subject is not stored in the compressed certificate, but the
+    /// signature still covers it. Set `count = 0` when the subject is fully
+    /// fixed in the template; otherwise the value is produced by
+    /// [`Self::subject_source`].
+    pub subject: CertElement,
+    /// How to produce the subject value (see [`SubjectSource`])
+    pub subject_source: SubjectSource<'a>,
     /// How to generate serial number
     pub serial_source: SerialSource,
     /// Slot where compressed certificate is stored
@@ -601,6 +638,11 @@ impl<'a> CertificateDefinition<'a> {
     /// * `compressed` - The compressed certificate data
     /// * `public_key` - The subject's public key
     /// * `serial` - Pre-generated serial number bytes
+    /// * `subject` - Subject bytes to inject at `self.subject` (e.g. a
+    ///   per-device common name). Ignored when `self.subject.count == 0`. When
+    ///   a subject element is declared but `None` is passed, the template's
+    ///   bytes are left in place — the caller is responsible for supplying the
+    ///   value that was signed.
     /// * `output` - Buffer to write the reconstructed DER certificate
     ///
     /// # Returns
@@ -610,6 +652,7 @@ impl<'a> CertificateDefinition<'a> {
         compressed: &CompressedCertificate,
         public_key: &PublicKey,
         serial: &[u8],
+        subject: Option<&[u8]>,
         output: &mut [u8],
     ) -> Result<usize, Error> {
         // Verify output buffer is large enough
@@ -620,6 +663,20 @@ impl<'a> CertificateDefinition<'a> {
         // Copy template to output
         let len = self.template.len();
         output[..len].copy_from_slice(self.template);
+
+        // Insert caller-supplied subject (e.g. a per-device common name). The
+        // library only places the bytes; the domain layer owns how they are
+        // derived and is responsible for matching what the CA signed.
+        if self.subject.count > 0
+            && let Some(subject) = subject
+        {
+            let offset = self.subject.offset as usize;
+            let count = self.subject.count as usize;
+            if offset + count > len || count > subject.len() {
+                return Err(ErrorKind::BadParam.into());
+            }
+            output[offset..offset + count].copy_from_slice(&subject[..count]);
+        }
 
         // Insert public key X coordinate
         if self.public_key_x.count > 0 {
@@ -791,12 +848,12 @@ mod tests {
 
     #[test]
     fn test_compressed_date_roundtrip() {
-        // Create a validity period: 2023-06-15 10:00 to 2028-06-15 10:00
+        // Create a validity period: 2026-06-15 10:00 to 2031-06-15 10:00
         let not_before = Time::UtcTime(
-            UtcTime::from_date_time(DateTime::new(2023, 6, 15, 10, 0, 0).unwrap()).unwrap(),
+            UtcTime::from_date_time(DateTime::new(2026, 6, 15, 10, 0, 0).unwrap()).unwrap(),
         );
         let not_after = Time::UtcTime(
-            UtcTime::from_date_time(DateTime::new(2028, 6, 15, 10, 0, 0).unwrap()).unwrap(),
+            UtcTime::from_date_time(DateTime::new(2031, 6, 15, 10, 0, 0).unwrap()).unwrap(),
         );
         let validity = Validity {
             not_before,
@@ -807,7 +864,7 @@ mod tests {
         let compressed = CompressedDate::from_validity(&validity).unwrap();
 
         // Verify fields
-        assert_eq!(compressed.year(), 23); // 2023 - 2000
+        assert_eq!(compressed.year(), 1); // 2026 - BASE_YEAR (2025)
         assert_eq!(compressed.month(), 6);
         assert_eq!(compressed.day(), 15);
         assert_eq!(compressed.hour(), 10);
@@ -818,11 +875,11 @@ mod tests {
         let decoded_issue = decoded.not_before.to_date_time();
         let decoded_expire = decoded.not_after.to_date_time();
 
-        assert_eq!(decoded_issue.year(), 2023);
+        assert_eq!(decoded_issue.year(), 2026);
         assert_eq!(decoded_issue.month(), 6);
         assert_eq!(decoded_issue.day(), 15);
         assert_eq!(decoded_issue.hour(), 10);
-        assert_eq!(decoded_expire.year(), 2028);
+        assert_eq!(decoded_expire.year(), 2031);
     }
 
     #[test]
@@ -912,6 +969,62 @@ mod tests {
         assert!(
             SerialSource::Stored(SlotAddress::Data08(0))
                 .generate(&device_serial, 0, &mut output)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_reconstruct_injects_subject() {
+        // 40-byte template with a 4-byte CN placeholder at offset 10.
+        let mut template = [0xAAu8; 40];
+        template[10..14].copy_from_slice(b"____");
+
+        let def = CertificateDefinition {
+            template: &template,
+            signature: CertElement::new(0, 0),
+            public_key_x: CertElement::new(0, 0),
+            public_key_y: CertElement::new(0, 0),
+            issue_date: CertElement::new(0, 0),
+            expire_date: CertElement::new(0, 0),
+            serial_number: CertElement::new(0, 0),
+            subject: CertElement::new(10, 4),
+            subject_source: SubjectSource::Template,
+            serial_source: SerialSource::DeviceSerial,
+            compressed_slot: crate::memory::Slot::Certificate0c,
+            public_key_slot: crate::memory::Slot::PrivateKey00,
+        };
+
+        // reconstruct() reads the validity unconditionally, so set a valid date.
+        let mut cc = CompressedCertificate::zeroed();
+        cc.set_encoded_date(
+            CompressedDate::new()
+                .with_year(26)
+                .with_month(6)
+                .with_day(2)
+                .with_hour(5)
+                .with_expire_years(30),
+        );
+        let pk = crate::command::PublicKey::default();
+
+        // Caller-supplied subject is injected; template preserved elsewhere.
+        let mut out = [0u8; 40];
+        let n = def
+            .reconstruct(&cc, &pk, &[], Some(b"WXYZ"), &mut out)
+            .unwrap();
+        assert_eq!(n, 40);
+        assert_eq!(&out[10..14], b"WXYZ");
+        assert_eq!(&out[..10], &template[..10]);
+        assert_eq!(&out[14..], &template[14..]);
+
+        // None leaves the template's placeholder untouched.
+        let mut out_none = [0u8; 40];
+        def.reconstruct(&cc, &pk, &[], None, &mut out_none).unwrap();
+        assert_eq!(&out_none[10..14], b"____");
+
+        // A subject shorter than the declared element is rejected.
+        let mut out_short = [0u8; 40];
+        assert!(
+            def.reconstruct(&cc, &pk, &[], Some(b"XY"), &mut out_short)
                 .is_err()
         );
     }

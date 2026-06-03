@@ -1,7 +1,9 @@
 //! Memory and configuration operations
 
 use crate::Block;
-use crate::cert::compressed::{CertificateDefinition, CompressedCertificate, SerialSource};
+use crate::cert::compressed::{
+    CertificateDefinition, CompressedCertificate, SerialSource, SubjectSource,
+};
 use crate::command::{self, Lock, PublicKey, Serial, Word};
 use crate::error::{Error, ErrorKind};
 use crate::memory::{CertificateRepr, CompressedCertRepr, Size, Slot, SlotAddress, Zone};
@@ -343,7 +345,19 @@ where
             &serial_buf[..len]
         };
 
-        def.reconstruct(&compressed, &public_key, serial, output)
+        // Resolve the subject from the definition (mirrors serial resolution).
+        let mut subject_buf = [0u8; 64];
+        let subject: Option<&[u8]> = match def.subject_source {
+            SubjectSource::Template => None,
+            SubjectSource::Provided(bytes) => Some(bytes),
+            SubjectSource::FromSerial(derive) => {
+                let device_serial = self.serial_number().await?;
+                let n = derive(&device_serial, &mut subject_buf).ok_or(ErrorKind::BadParam)?;
+                Some(&subject_buf[..n])
+            }
+        };
+
+        def.reconstruct(&compressed, &public_key, serial, subject, output)
     }
 
     /// Compress a DER certificate and write it to the ATECC.
@@ -760,7 +774,18 @@ where
             &serial_buf[..len]
         };
 
-        def.reconstruct(&compressed, &public_key, serial, output)
+        let mut subject_buf = [0u8; 64];
+        let subject: Option<&[u8]> = match def.subject_source {
+            SubjectSource::Template => None,
+            SubjectSource::Provided(bytes) => Some(bytes),
+            SubjectSource::FromSerial(derive) => {
+                let device_serial = self.serial_number_blocking()?;
+                let n = derive(&device_serial, &mut subject_buf).ok_or(ErrorKind::BadParam)?;
+                Some(&subject_buf[..n])
+            }
+        };
+
+        def.reconstruct(&compressed, &public_key, serial, subject, output)
     }
 
     pub fn write_certificate_blocking(
