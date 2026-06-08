@@ -60,7 +60,7 @@ mod packet;
 pub mod tngtls;
 
 pub use client::{Aes, AtCaClient, Memory, Random, Sha, SigningKey, VerifyingKey};
-pub use command::{Block, Digest, PublicKey};
+pub use command::{Block, Digest, PublicKey, Serial};
 pub use datalink::I2cConfig;
 pub use packet::CRC16;
 pub use signature;
