@@ -1185,7 +1185,11 @@ mod tests {
             let n = def.reconstruct(&cc, &pk, &[], None, &mut out).unwrap();
 
             let delta = sig_len as isize - 70;
-            assert_eq!(n as isize, tlen as isize + delta, "total length ({sig_len})");
+            assert_eq!(
+                n as isize,
+                tlen as isize + delta,
+                "total length ({sig_len})"
+            );
 
             let outer = ((out[2] as usize) << 8) | out[3] as usize;
             assert_eq!(outer, n - 4, "outer SEQUENCE length ({sig_len})");
@@ -1203,8 +1207,16 @@ mod tests {
 
             // Compressing the reconstructed cert recovers the same R and S.
             let back = def.compress(&out[..n]).unwrap();
-            assert_eq!(back.signature_r(), cc.signature_r(), "round-trip R ({sig_len})");
-            assert_eq!(back.signature_s(), cc.signature_s(), "round-trip S ({sig_len})");
+            assert_eq!(
+                back.signature_r(),
+                cc.signature_r(),
+                "round-trip R ({sig_len})"
+            );
+            assert_eq!(
+                back.signature_s(),
+                cc.signature_s(),
+                "round-trip S ({sig_len})"
+            );
         }
     }
 }
