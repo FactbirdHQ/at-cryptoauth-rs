@@ -584,14 +584,21 @@ impl<'a> CertificateDefinition<'a> {
     pub fn compress(&self, der_cert: &[u8]) -> Result<CompressedCertificate, Error> {
         let mut cc = CompressedCertificate::zeroed();
 
-        // Extract signature from DER and convert to R,S
+        // Extract signature from DER and convert to R,S. The signature is a
+        // DER SEQUENCE whose encoded length varies with the R/S values (P-256
+        // signatures are 70-72 bytes), so read its real length from the header
+        // rather than trusting the template's `count`.
         if self.signature.count > 0 {
             let offset = self.signature.offset as usize;
-            let count = self.signature.count as usize;
-            if offset + count > der_cert.len() {
+            if offset >= der_cert.len() || der_cert[offset] != DER_SEQUENCE {
                 return Err(ErrorKind::BadParam.into());
             }
-            let sig_bytes = &der_cert[offset..offset + count];
+            let (content, hdr) = read_definite_len(der_cert, offset + 1)?;
+            let total = 1 + hdr + content;
+            if offset + total > der_cert.len() {
+                return Err(ErrorKind::BadParam.into());
+            }
+            let sig_bytes = &der_cert[offset..offset + total];
             let signature =
                 p256::ecdsa::Signature::from_der(sig_bytes).map_err(|_| ErrorKind::BadParam)?;
             let fixed = signature.to_bytes();
@@ -661,7 +668,7 @@ impl<'a> CertificateDefinition<'a> {
         }
 
         // Copy template to output
-        let len = self.template.len();
+        let mut len = self.template.len();
         output[..len].copy_from_slice(self.template);
 
         // Insert caller-supplied subject (e.g. a per-device common name). The
@@ -737,22 +744,87 @@ impl<'a> CertificateDefinition<'a> {
             }
         }
 
-        // Insert signature (DER format: SEQUENCE { INTEGER r, INTEGER s })
+        // Insert signature (DER SEQUENCE { INTEGER r, INTEGER s }). It is the
+        // final, outermost element and lies outside the signed TBSCertificate,
+        // so its encoded length may differ from the template (P-256 signatures
+        // are 70-72 bytes depending on the high bit of R and S). Write the
+        // actual bytes and fix up the two enclosing length fields — the
+        // signatureValue BIT STRING and the outer Certificate SEQUENCE — so the
+        // certificate stays well-formed regardless of the signature's length.
         if self.signature.count > 0 {
             let offset = self.signature.offset as usize;
-            let count = self.signature.count as usize;
-            if offset + count > len {
-                return Err(ErrorKind::BadParam.into());
-            }
+            let template_len = self.signature.count as usize;
             let der_sig = compressed.to_der_signature()?;
             let sig_bytes = der_sig.as_bytes();
-            if count <= sig_bytes.len() {
-                output[offset..offset + count].copy_from_slice(&sig_bytes[..count]);
+            let actual = sig_bytes.len();
+            if offset < 3 || offset + actual > output.len() {
+                return Err(ErrorKind::SmallBuffer.into());
+            }
+            output[offset..offset + actual].copy_from_slice(sig_bytes);
+            if actual != template_len {
+                let delta = actual as isize - template_len as isize;
+                // signatureValue BIT STRING: its length octet sits two bytes
+                // before the SEQUENCE (BIT STRING tag, length, unused-bits).
+                adjust_definite_len(output, offset - 2, delta)?;
+                // Outer Certificate SEQUENCE: length octet(s) follow byte 0.
+                adjust_definite_len(output, 1, delta)?;
+                len = offset + actual;
             }
         }
 
         Ok(len)
     }
+}
+
+/// DER tag for a SEQUENCE (used to sanity-check the signature element).
+const DER_SEQUENCE: u8 = 0x30;
+
+/// Reads a DER definite-form length at `buf[pos]` (the length octet(s) that
+/// follow a tag). Returns `(content_length, number_of_length_octets)`.
+fn read_definite_len(buf: &[u8], pos: usize) -> Result<(usize, usize), Error> {
+    if pos >= buf.len() {
+        return Err(ErrorKind::BadParam.into());
+    }
+    let first = buf[pos];
+    if first < 0x80 {
+        return Ok((first as usize, 1)); // short form
+    }
+    let n = (first & 0x7f) as usize; // long form: number of length octets
+    if n == 0 || n > 4 || pos + n >= buf.len() {
+        return Err(ErrorKind::BadParam.into());
+    }
+    let mut v = 0usize;
+    for i in 0..n {
+        v = (v << 8) | buf[pos + 1 + i] as usize;
+    }
+    Ok((v, 1 + n))
+}
+
+/// Adjusts the definite-form length value at `buf[pos]` by `delta`, preserving
+/// the number of length octets. Errors if the change would require a different
+/// length form, which cannot happen for the +/-2-byte P-256 signature spread.
+fn adjust_definite_len(buf: &mut [u8], pos: usize, delta: isize) -> Result<(), Error> {
+    let (val, n) = read_definite_len(buf, pos)?;
+    let new = val as isize + delta;
+    if new < 0 {
+        return Err(ErrorKind::BadParam.into());
+    }
+    let new = new as usize;
+    if n == 1 {
+        if new > 0x7f {
+            return Err(ErrorKind::BadParam.into()); // would need long form
+        }
+        buf[pos] = new as u8;
+    } else {
+        let octets = n - 1;
+        if new >> (8 * octets) != 0 {
+            return Err(ErrorKind::BadParam.into()); // would not fit the form
+        }
+        for i in 0..octets {
+            buf[pos + 1 + i] = (new >> (8 * (octets - 1 - i))) as u8;
+        }
+    }
+    Ok(())
 }
 
 /// Parse an ASN.1 time string (UTCTime or GeneralizedTime) into a Time value
@@ -1027,5 +1099,124 @@ mod tests {
             def.reconstruct(&cc, &pk, &[], Some(b"XY"), &mut out_short)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn test_reconstruct_variable_signature_length() {
+        // Minimal cert-like container with a 2-byte outer SEQUENCE length (as
+        // real X.509 certs use): SEQUENCE { [0xAA; 200] prefix, BIT STRING {
+        // 0x00 unused-bits, <signature SEQUENCE> } }. The signature is the
+        // final element, exactly as in a real certificate.
+        const PREFIX: usize = 200;
+        const SIG_OFFSET: usize = 4 + PREFIX + 3; // outer hdr + prefix + BIT STRING hdr
+
+        fn build_template(sig: &[u8], buf: &mut [u8]) -> usize {
+            let body = PREFIX + 3 + sig.len();
+            buf[0] = 0x30;
+            buf[1] = 0x82;
+            buf[2] = (body >> 8) as u8;
+            buf[3] = (body & 0xff) as u8;
+            for b in buf[4..4 + PREFIX].iter_mut() {
+                *b = 0xAA;
+            }
+            buf[4 + PREFIX] = 0x03; // BIT STRING
+            buf[4 + PREFIX + 1] = (1 + sig.len()) as u8;
+            buf[4 + PREFIX + 2] = 0x00; // unused bits
+            buf[SIG_OFFSET..SIG_OFFSET + sig.len()].copy_from_slice(sig);
+            4 + body
+        }
+
+        // A CompressedCertificate whose signature DER-encodes to `len` bytes
+        // (70/71/72), driven by the high bit of R and S.
+        fn cc_with_sig_len(len: usize) -> CompressedCertificate {
+            let mut r = [0x11u8; 32];
+            let mut s = [0x22u8; 32];
+            if len >= 71 {
+                r[0] = 0x80; // high bit set => INTEGER gains a 0x00 sign octet
+            }
+            if len >= 72 {
+                s[0] = 0x80;
+            }
+            let mut cc = CompressedCertificate::zeroed();
+            cc.set_signature(&r, &s);
+            cc.set_encoded_date(
+                CompressedDate::new()
+                    .with_year(26)
+                    .with_month(6)
+                    .with_day(8)
+                    .with_hour(13)
+                    .with_expire_years(30),
+            );
+            cc
+        }
+
+        let pk = crate::command::PublicKey::default();
+
+        // Template carries a 70-byte signature (both R and S high bit clear).
+        let template_sig = cc_with_sig_len(70).to_der_signature().unwrap();
+        let template_sig = template_sig.as_bytes();
+        assert_eq!(template_sig.len(), 70);
+        let mut template_buf = [0u8; 320];
+        let tlen = build_template(template_sig, &mut template_buf);
+        let template = &template_buf[..tlen];
+        assert_eq!(template[SIG_OFFSET], DER_SEQUENCE);
+
+        let def = CertificateDefinition {
+            template,
+            signature: CertElement::new(SIG_OFFSET as u16, 70),
+            public_key_x: CertElement::new(0, 0),
+            public_key_y: CertElement::new(0, 0),
+            issue_date: CertElement::new(0, 0),
+            expire_date: CertElement::new(0, 0),
+            serial_number: CertElement::new(0, 0),
+            subject: CertElement::new(0, 0),
+            subject_source: SubjectSource::Template,
+            serial_source: SerialSource::DeviceSerial,
+            compressed_slot: crate::memory::Slot::Certificate0c,
+            public_key_slot: crate::memory::Slot::PrivateKey00,
+        };
+
+        // The template's signature is 70 bytes; reconstruct 70/71/72-byte
+        // signatures and confirm the enclosing length fields and the total
+        // length track the actual signature, and that the result round-trips.
+        for sig_len in [70usize, 71, 72] {
+            let cc = cc_with_sig_len(sig_len);
+            let mut out = [0u8; 320];
+            let n = def.reconstruct(&cc, &pk, &[], None, &mut out).unwrap();
+
+            let delta = sig_len as isize - 70;
+            assert_eq!(
+                n as isize,
+                tlen as isize + delta,
+                "total length ({sig_len})"
+            );
+
+            let outer = ((out[2] as usize) << 8) | out[3] as usize;
+            assert_eq!(outer, n - 4, "outer SEQUENCE length ({sig_len})");
+            assert_eq!(
+                out[SIG_OFFSET - 2] as usize,
+                1 + sig_len,
+                "BIT STRING length ({sig_len})"
+            );
+            assert_eq!(out[SIG_OFFSET], DER_SEQUENCE);
+            assert_eq!(
+                2 + out[SIG_OFFSET + 1] as usize,
+                sig_len,
+                "signature SEQUENCE length ({sig_len})"
+            );
+
+            // Compressing the reconstructed cert recovers the same R and S.
+            let back = def.compress(&out[..n]).unwrap();
+            assert_eq!(
+                back.signature_r(),
+                cc.signature_r(),
+                "round-trip R ({sig_len})"
+            );
+            assert_eq!(
+                back.signature_s(),
+                cc.signature_s(),
+                "round-trip S ({sig_len})"
+            );
+        }
     }
 }
