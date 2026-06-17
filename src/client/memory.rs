@@ -52,6 +52,17 @@ where
         Ok(pubkey)
     }
 
+    /// Derive the public key of a private-key slot via GenKey.
+    ///
+    /// A private-key slot is secret and cannot be read back with [`Self::pubkey`]
+    /// (the device rejects the Read with an execution error); its public key is
+    /// recomputed from the stored private key instead.
+    pub async fn gen_pubkey(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
+        let mut inner = self.atca.inner.lock().await;
+        let packet = command::GenKey::new(inner.packet_builder()).public_key(key_id)?;
+        inner.execute(packet).await?.as_ref().try_into()
+    }
+
     pub async fn write_pubkey(&mut self, key_id: Slot, pubkey: &[u8]) -> Result<(), Error> {
         let mut data = Block::default();
         let mut offset = 0;
@@ -321,7 +332,13 @@ where
         output: &mut [u8],
     ) -> Result<usize, Error> {
         let compressed = self.read_compressed_cert(def.compressed_slot).await?;
-        let public_key = self.pubkey(def.public_key_slot).await?;
+        // A private-key slot is secret: its public key must be derived via
+        // GenKey, not read back. Public-key / cert slots are read directly.
+        let public_key = if def.public_key_slot.is_private_key() {
+            self.gen_pubkey(def.public_key_slot).await?
+        } else {
+            self.pubkey(def.public_key_slot).await?
+        };
 
         let mut serial_buf = [0u8; 32];
         let serial: &[u8] = if let SerialSource::Stored(addr) = &def.serial_source {
@@ -440,6 +457,17 @@ where
         }
 
         Ok(pubkey)
+    }
+
+    /// Blocking counterpart to [`Self::gen_pubkey`].
+    pub fn gen_pubkey_blocking(&mut self, key_id: Slot) -> Result<PublicKey, Error> {
+        let mut inner = self
+            .atca
+            .inner
+            .try_lock()
+            .map_err(|_| ErrorKind::MutexLocked)?;
+        let packet = command::GenKey::new(inner.packet_builder()).public_key(key_id)?;
+        inner.execute_blocking(packet)?.as_ref().try_into()
     }
 
     pub fn write_pubkey_blocking(&mut self, key_id: Slot, pubkey: &[u8]) -> Result<(), Error> {
@@ -751,7 +779,13 @@ where
         output: &mut [u8],
     ) -> Result<usize, Error> {
         let compressed = self.read_compressed_cert_blocking(def.compressed_slot)?;
-        let public_key = self.pubkey_blocking(def.public_key_slot)?;
+        // A private-key slot is secret: its public key must be derived via
+        // GenKey, not read back. Public-key / cert slots are read directly.
+        let public_key = if def.public_key_slot.is_private_key() {
+            self.gen_pubkey_blocking(def.public_key_slot)?
+        } else {
+            self.pubkey_blocking(def.public_key_slot)?
+        };
 
         let mut serial_buf = [0u8; 32];
         let serial: &[u8] = if let SerialSource::Stored(addr) = &def.serial_source {
