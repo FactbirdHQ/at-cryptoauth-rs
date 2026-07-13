@@ -265,6 +265,11 @@ where
                 .map_err(|_| TlsError::InvalidCertificate)?,
         };
 
+        // Trust is anchored on this configured key, not on a server-presented
+        // copy of the root. Kept separate from `ca_pubkey`, which mutates as we
+        // descend the chain.
+        let anchor_pubkey = ca_pubkey;
+
         let mut cn = None;
 
         // Walk the chain from the entry closest to CA (last) down to the leaf (first).
@@ -278,6 +283,25 @@ where
 
             let parsed =
                 DecodedCertificate::from_der(cert_data).map_err(|_| TlsError::DecodeError)?;
+
+            // Extract this cert's public key up front so a server-presented copy
+            // of the trust anchor can be recognised before any verification.
+            let spki_bytes = parsed
+                .tbs_certificate
+                .subject_public_key_info
+                .public_key
+                .as_bytes()
+                .ok_or(TlsError::DecodeError)?;
+            let cert_pubkey = sec1_to_raw_pubkey(spki_bytes)?;
+
+            // A server MAY include the (cross-signed) root in the chain
+            // (RFC 8446 4.4.2). We already trust the anchor by its public key, so
+            // skip a presented copy of it rather than verifying it. The
+            // cross-signed Amazon Root CA 3 is RSA-signed and would otherwise
+            // trip the ECDSA-only check below.
+            if cert_pubkey.as_ref() == anchor_pubkey.as_ref() {
+                continue;
+            }
 
             // Only ECDSA P-256 SHA-256 is supported by the ATECC608
             if parsed.signature_algorithm.oid != ECDSA_SHA256_OID {
@@ -301,15 +325,6 @@ where
             self.atca
                 .verify_external_blocking(&digest, &signature, &ca_pubkey)
                 .map_err(|_| TlsError::InvalidCertificate)?;
-
-            // Extract this cert's public key for the next iteration (or as server key for leaf)
-            let spki_bytes = parsed
-                .tbs_certificate
-                .subject_public_key_info
-                .public_key
-                .as_bytes()
-                .ok_or(TlsError::DecodeError)?;
-            let cert_pubkey = sec1_to_raw_pubkey(spki_bytes)?;
 
             if i == 0 {
                 // Leaf certificate — extract CN and store server public key
