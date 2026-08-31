@@ -379,16 +379,23 @@ where
 
     /// Compress a DER certificate and write it to the ATECC.
     ///
-    /// Writes the compressed cert to the cert slot, and if serial source
-    /// is `Stored`, writes the serial number to the addressed Data08 block.
+    /// If the serial source is `Stored`, writes the serial number to the
+    /// addressed Data08 block first, then the compressed cert to the cert slot.
+    ///
+    /// That order matters: the two writes are separate ATECC transactions, and
+    /// the cert slot is what decides whether a certificate is present at all.
+    /// [`read_certificate`](Self::read_certificate) fails on a zeroed cert slot
+    /// (its encoded date has no valid month or day) but silently splices in
+    /// whatever the serial block holds. Writing the cert slot last makes it the
+    /// commit point, so an interrupted write leaves the slot unreadable and the
+    /// caller retries. The reverse order leaves a certificate that reconstructs
+    /// cleanly against a stale serial, which no read can detect.
     pub async fn write_certificate(
         &mut self,
         def: &CertificateDefinition<'_>,
         der_cert: &[u8],
     ) -> Result<(), Error> {
         let compressed = def.compress(der_cert)?;
-        self.write_compressed_cert(def.compressed_slot, &compressed)
-            .await?;
 
         // If serial is stored externally, write it to the Data08 block
         if let SerialSource::Stored(addr) = &def.serial_source {
@@ -399,10 +406,18 @@ where
             self.write_addressed(addr, &block).await?;
         }
 
+        self.write_compressed_cert(def.compressed_slot, &compressed)
+            .await?;
+
         Ok(())
     }
 
     /// Erase a certificate from the ATECC (zero the cert slot and stored serial).
+    ///
+    /// Zeroes the cert slot first — the mirror of
+    /// [`write_certificate`](Self::write_certificate)'s order, and correct for
+    /// the same reason: it invalidates the commit point up front, so a half-done
+    /// erase still reads as "no certificate" rather than as a live one.
     pub async fn erase_certificate(
         &mut self,
         def: &CertificateDefinition<'_>,
@@ -822,13 +837,13 @@ where
         def.reconstruct(&compressed, &public_key, serial, subject, output)
     }
 
+    /// Blocking [`write_certificate`](Self::write_certificate); same write order.
     pub fn write_certificate_blocking(
         &mut self,
         def: &CertificateDefinition<'_>,
         der_cert: &[u8],
     ) -> Result<(), Error> {
         let compressed = def.compress(der_cert)?;
-        self.write_compressed_cert_blocking(def.compressed_slot, &compressed)?;
 
         if let SerialSource::Stored(addr) = &def.serial_source {
             let serial = def.extract_serial(der_cert);
@@ -837,6 +852,8 @@ where
             block.as_mut()[..count].copy_from_slice(&serial[..count]);
             self.write_addressed_blocking(addr, &block)?;
         }
+
+        self.write_compressed_cert_blocking(def.compressed_slot, &compressed)?;
 
         Ok(())
     }
